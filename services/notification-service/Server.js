@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const { initializeConsumer, disconnectConsumer } = require('./config/kafka');
 
 // Load environment variables
 dotenv.config();
@@ -36,8 +37,24 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3007;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`Notification Service running on port ${PORT}`);
+    try {
+        await initializeConsumer();
+    } catch (error) {
+        console.error('Failed to start notification service:', error);
+        process.exit(1);
+    }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(async () => {
+        console.log('HTTP server closed');
+        await disconnectConsumer();
+        process.exit(0);
+    });
 });
 
 module.exports = server;

@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const { initializeProducer, disconnectProducer } = require('./config/kafka');
 
 // Load environment variables
 dotenv.config();
@@ -16,7 +17,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const authRoutes = require('./routes/authRoutes');
-app.use('/api/auth', authRoutes);
+app.use('/api/v1', authRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -36,8 +37,24 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3001;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`Auth Service running on port ${PORT}`);
+    try {
+        await initializeProducer();
+    } catch (error) {
+        console.error('Failed to start auth service:', error);
+        process.exit(1);
+    }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(async () => {
+        console.log('HTTP server closed');
+        await disconnectProducer();
+        process.exit(0);
+    });
 });
 
 module.exports = server;

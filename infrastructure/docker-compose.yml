@@ -42,8 +42,10 @@ services:
       DB_NAME: auth_db
       DB_USER: admin
       DB_PASSWORD: password
+      KAFKA_BROKER: kafka:9092
     depends_on:
       - postgres-auth
+      - kafka
     networks:
       - healthcare-network
 
@@ -136,8 +138,10 @@ services:
       DB_NAME: payment_db
       DB_USER: admin
       DB_PASSWORD: password
+      KAFKA_BROKER: kafka:9092
     depends_on:
       - postgres-payment
+      - kafka
     networks:
       - healthcare-network
 
