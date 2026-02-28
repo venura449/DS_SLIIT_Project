@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
 const { initializeProducer, disconnectProducer } = require('./config/kafka');
+const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
 dotenv.config();
@@ -40,7 +41,13 @@ const PORT = process.env.PORT || 3001;
 const server = app.listen(PORT, async () => {
     console.log(`Auth Service running on port ${PORT}`);
     try {
+        // Initialize database
+        await initializeDatabase();
+        console.log('Database initialized successfully');
+
+        // Initialize Kafka producer
         await initializeProducer();
+        console.log('Kafka producer initialized successfully');
     } catch (error) {
         console.error('Failed to start auth service:', error);
         process.exit(1);
