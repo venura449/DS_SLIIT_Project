@@ -58,6 +58,26 @@ const UpdateProfileForm = ({ user, onClose, onSuccess }) => {
     return true;
   };
 
+  const isPageValid = (page) => {
+    if (page === 1) {
+      if (!formData.name.trim()) {
+        return false;
+      }
+      if (formData.name.trim().length < 2) {
+        return false;
+      }
+    }
+    if (page === 3) {
+      if (!formData.phone.trim()) {
+        return false;
+      }
+      if (!/^\d{10}$/.test(formData.phone.replace(/\D/g, ""))) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleNext = () => {
     if (validatePage(currentPage)) {
       setCurrentPage(Math.min(currentPage + 1, pages.length));
@@ -699,18 +719,20 @@ const UpdateProfileForm = ({ user, onClose, onSuccess }) => {
                         : ""
                   }`}
                   onClick={() => {
-                    if (currentPage > page.id && validatePage(currentPage)) {
+                    if (currentPage > page.id && isPageValid(currentPage)) {
                       setCurrentPage(page.id);
                     } else if (
                       currentPage < page.id &&
-                      validatePage(currentPage)
+                      isPageValid(currentPage)
                     ) {
                       setCurrentPage(page.id);
+                    } else if (currentPage !== page.id) {
+                      validatePage(currentPage);
                     }
                   }}
                   disabled={
                     Math.abs(currentPage - page.id) > 1 &&
-                    !validatePage(currentPage)
+                    !isPageValid(currentPage)
                   }
                   title={page.title}
                 >

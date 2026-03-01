@@ -1,6 +1,13 @@
-﻿import { useState } from "react";
+﻿import { useState, useEffect } from "react";
 import { logoutUser } from "../../utils/authService";
+import {
+  submitVerificationDocument,
+  submitForVerification,
+  getVerificationDocuments,
+  getVerificationStatus,
+} from "../../utils/verificationService";
 import UpdateProfileForm from "../UpdateProfileForm";
+import PDFUploader from "../PDFUploader";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -24,6 +31,26 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState(initialUser);
+  const [uploadedDocuments, setUploadedDocuments] = useState({});
+  const [uploadError, setUploadError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState(null);
+  const [submittedDocs, setSubmittedDocs] = useState([]);
+  const [loadingVerification, setLoadingVerification] = useState(false);
+
+  useEffect(() => {
+    const loadVerification = async () => {
+      setLoadingVerification(true);
+      const [statusResult, docsResult] = await Promise.all([
+        getVerificationStatus(),
+        getVerificationDocuments(),
+      ]);
+      if (statusResult.success) setVerificationStatus(statusResult.status);
+      if (docsResult.success) setSubmittedDocs(docsResult.documents);
+      setLoadingVerification(false);
+    };
+    loadVerification();
+  }, []);
 
   const handleLogout = () => {
     logoutUser();
@@ -32,6 +59,77 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
   const handleProfileUpdate = (updatedUser) => {
     setUser(updatedUser);
+  };
+
+  const handleDocumentUpload = (documentType, uploadResponse) => {
+    if (uploadResponse.success) {
+      setUploadedDocuments((prev) => ({
+        ...prev,
+        [documentType]: uploadResponse,
+      }));
+      setUploadError("");
+    }
+  };
+
+  const handleUploadError = (documentType, error) => {
+    setUploadError(`Error uploading ${documentType}: ${error}`);
+  };
+
+  const handleBackendSave = async (documentType, uploadedFile) => {
+    try {
+      const result = await submitVerificationDocument(
+        documentType,
+        uploadedFile,
+      );
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error,
+        };
+      }
+      return {
+        success: true,
+        data: result.data,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err.message || "Failed to save document",
+      };
+    }
+  };
+
+  const handleSubmitForVerification = async () => {
+    const documentCount = Object.keys(uploadedDocuments).length;
+    if (documentCount === 0) {
+      setUploadError("Please upload at least one document before submitting");
+      return;
+    }
+
+    setSubmitting(true);
+    setUploadError("");
+
+    try {
+      const result = await submitForVerification();
+      if (!result.success) {
+        setUploadError(result.error || "Failed to submit for verification");
+        return;
+      }
+
+      // Refresh status and docs from backend
+      const [statusResult, docsResult] = await Promise.all([
+        getVerificationStatus(),
+        getVerificationDocuments(),
+      ]);
+      if (statusResult.success) setVerificationStatus(statusResult.status);
+      if (docsResult.success) setSubmittedDocs(docsResult.documents);
+      setUploadedDocuments({});
+      setUploadError("");
+    } catch (err) {
+      setUploadError(err.message || "Failed to submit for verification");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -414,22 +512,6 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   <h2>Welcome, Dr. {user?.name || "Doctor"} ðŸ‘‹</h2>
                   <p>Here's a summary of your activity today.</p>
                 </div>
-                <div className="dd-alert">
-                  <span className="dd-alert-icon">⚙️</span>
-                  Your account is <strong>pending verification</strong>. Submit
-                  your documents to activate all features.
-                  <button
-                    className="dd-btn dd-btn-primary"
-                    style={{
-                      marginLeft: "auto",
-                      padding: "5px 12px",
-                      fontSize: "12px",
-                    }}
-                    onClick={() => setActiveTab("verification")}
-                  >
-                    Complete Now
-                  </button>
-                </div>
                 <div className="dd-stats">
                   <div className="dd-stat">
                     <div className="dd-stat-top">
@@ -549,55 +631,407 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                     Submit your credentials to activate your doctor account.
                   </p>
                 </div>
-                <div className="dd-section">
-                  <div className="dd-section-title">
-                    ðŸ“‹ Required Documents
-                  </div>
-                  <ul className="dd-checklist">
-                    <li>
-                      <span className="dd-check-dot" /> Medical License (PDF /
-                      JPG)
-                    </li>
-                    <li>
-                      <span className="dd-check-dot" /> Government-issued ID
-                    </li>
-                    <li>
-                      <span className="dd-check-dot" /> Professional Credentials
-                    </li>
-                    <li>
-                      <span className="dd-check-dot" /> Insurance Certificate
-                    </li>
-                  </ul>
-                  <button className="dd-btn dd-btn-primary">
-                    Upload Documents
-                  </button>
-                </div>
-                <div className="dd-section">
-                  <div className="dd-section-title">ðŸ“Œ Current Status</div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    <span
+                {(!verificationStatus ||
+                  verificationStatus.status === "pending" ||
+                  verificationStatus.status === "no_documents" ||
+                  verificationStatus.status === "rejected") && (
+                  <div className="dd-section">
+                    <div className="dd-section-title">
+                      📋 Required Documents
+                    </div>
+                    <p
                       style={{
-                        background: "#fffbeb",
-                        border: "1px solid #fcd34d",
-                        color: "#92400e",
-                        padding: "4px 12px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        fontWeight: 600,
+                        fontSize: "13px",
+                        color: "#7a8fa6",
+                        marginBottom: "18px",
+                        lineHeight: "1.5",
                       }}
                     >
-                      â³ Pending Review
-                    </span>
-                    <span style={{ fontSize: "13px", color: "#7a8fa6" }}>
-                      Submitted documents are under review by our team.
-                    </span>
+                      Please upload all required documents in PDF format. Each
+                      file should not exceed 25MB. Your documents will be
+                      securely stored and reviewed by our verification team.
+                    </p>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "20px",
+                      }}
+                    >
+                      <div>
+                        <PDFUploader
+                          label="Medical License"
+                          folder="doctor-verification/licenses"
+                          documentType="license"
+                          onSuccess={(response) =>
+                            handleDocumentUpload("license", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Medical License", error)
+                          }
+                          onBackendSave={handleBackendSave}
+                        />
+                      </div>
+
+                      <div>
+                        <PDFUploader
+                          label="Government-issued ID"
+                          folder="doctor-verification/ids"
+                          documentType="government_id"
+                          onSuccess={(response) =>
+                            handleDocumentUpload("government_id", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Government ID", error)
+                          }
+                          onBackendSave={handleBackendSave}
+                        />
+                      </div>
+
+                      <div>
+                        <PDFUploader
+                          label="Professional Credentials"
+                          folder="doctor-verification/credentials"
+                          documentType="credentials"
+                          onSuccess={(response) =>
+                            handleDocumentUpload("credentials", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Credentials", error)
+                          }
+                          onBackendSave={handleBackendSave}
+                        />
+                      </div>
+
+                      <div>
+                        <PDFUploader
+                          label="Insurance Certificate"
+                          folder="doctor-verification/insurance"
+                          documentType="insurance"
+                          onSuccess={(response) =>
+                            handleDocumentUpload("insurance", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Insurance Certificate", error)
+                          }
+                          onBackendSave={handleBackendSave}
+                        />
+                      </div>
+                    </div>
+
+                    {uploadError && (
+                      <div
+                        style={{
+                          marginTop: "16px",
+                          padding: "10px 14px",
+                          background: "#fef2f2",
+                          border: "1px solid #fecaca",
+                          borderRadius: "8px",
+                          fontSize: "13px",
+                          color: "#dc2626",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>⚠️</span>
+                        {uploadError}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: "20px" }}>
+                      <button
+                        className="dd-btn dd-btn-primary"
+                        onClick={handleSubmitForVerification}
+                        disabled={
+                          submitting ||
+                          Object.keys(uploadedDocuments).length === 0
+                        }
+                      >
+                        {submitting ? (
+                          <>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                width: "14px",
+                                height: "14px",
+                                border: "2px solid rgba(255, 255, 255, 0.3)",
+                                borderTopColor: "#fff",
+                                borderRadius: "50%",
+                                animation: "spin 0.6s linear infinite",
+                                marginRight: "6px",
+                              }}
+                            ></span>
+                            Submitting...
+                          </>
+                        ) : Object.keys(uploadedDocuments).length > 0 ? (
+                          "✓ Documents Uploaded - Submit for Review"
+                        ) : (
+                          "Upload Documents First"
+                        )}
+                      </button>
+                    </div>
                   </div>
+                )}
+                <div className="dd-section">
+                  <div className="dd-section-title">✅ Current Status</div>
+                  {loadingVerification ? (
+                    <div style={{ fontSize: "13px", color: "#7a8fa6" }}>
+                      Loading status…
+                    </div>
+                  ) : verificationStatus ? (
+                    <>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {verificationStatus.status === "approved" && (
+                          <span
+                            style={{
+                              background: "#f0fdf4",
+                              border: "1px solid #86efac",
+                              color: "#15803d",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ✓ Approved
+                          </span>
+                        )}
+                        {verificationStatus.status ===
+                          "submitted_for_review" && (
+                          <span
+                            style={{
+                              background: "#eff6ff",
+                              border: "1px solid #93c5fd",
+                              color: "#1d4ed8",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            🔍 Under Review
+                          </span>
+                        )}
+                        {verificationStatus.status === "rejected" && (
+                          <span
+                            style={{
+                              background: "#fff1f1",
+                              border: "1px solid #fca5a5",
+                              color: "#dc2626",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ✕ Rejected
+                          </span>
+                        )}
+                        {(verificationStatus.status === "pending" ||
+                          verificationStatus.status === "no_documents") && (
+                          <span
+                            style={{
+                              background: "#fffbeb",
+                              border: "1px solid #fcd34d",
+                              color: "#92400e",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ⏳ Pending Submission
+                          </span>
+                        )}
+                        <span style={{ fontSize: "13px", color: "#7a8fa6" }}>
+                          {verificationStatus.documentsSubmitted} of{" "}
+                          {verificationStatus.totalRequired} documents submitted
+                        </span>
+                      </div>
+                      {verificationStatus.status === "rejected" &&
+                        verificationStatus.rejectionReason && (
+                          <div
+                            style={{
+                              marginTop: "10px",
+                              padding: "10px 14px",
+                              background: "#fff1f1",
+                              border: "1px solid #fca5a5",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              color: "#dc2626",
+                            }}
+                          >
+                            <strong>Rejection reason:</strong>{" "}
+                            {verificationStatus.rejectionReason}
+                          </div>
+                        )}
+                    </>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          background: "#fffbeb",
+                          border: "1px solid #fcd34d",
+                          color: "#92400e",
+                          padding: "4px 12px",
+                          borderRadius: "20px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        ⏳ Pending Submission
+                      </span>
+                      <span style={{ fontSize: "13px", color: "#7a8fa6" }}>
+                        Upload and submit your documents to begin verification.
+                      </span>
+                    </div>
+                  )}
+
+                  {submittedDocs.length > 0 && (
+                    <div style={{ marginTop: "16px" }}>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#3a5068",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.4px",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        Submitted Documents
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fill, minmax(200px, 1fr))",
+                          gap: "10px",
+                        }}
+                      >
+                        {submittedDocs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            style={{
+                              background: "#f8fafc",
+                              border: "1px solid #e4eaf0",
+                              borderRadius: "8px",
+                              padding: "10px 12px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                                color: "#0a3d62",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              {doc.documentType === "license" &&
+                                "Medical License"}
+                              {doc.documentType === "government_id" &&
+                                "Government ID"}
+                              {doc.documentType === "credentials" &&
+                                "Professional Credentials"}
+                              {doc.documentType === "insurance" &&
+                                "Insurance Certificate"}
+                              {![
+                                "license",
+                                "government_id",
+                                "credentials",
+                                "insurance",
+                              ].includes(doc.documentType) && doc.documentType}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#3a5068",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {doc.fileName}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                color: "#b0bec8",
+                                marginTop: "2px",
+                              }}
+                            >
+                              {new Date(
+                                doc.savedAt || doc.uploadedAt,
+                              ).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </div>
+                            <a
+                              href={doc.documentUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                marginTop: "6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                padding: "3px 9px",
+                                borderRadius: "5px",
+                                background: "#eff6ff",
+                                color: "#1d4ed8",
+                                fontSize: "11.5px",
+                                fontWeight: 600,
+                                textDecoration: "none",
+                                border: "1px solid #93c5fd",
+                              }}
+                            >
+                              📄 View PDF
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {Object.keys(uploadedDocuments).length > 0 && (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "12px 14px",
+                        background: "#f0fdf4",
+                        border: "1px solid #bbf7d0",
+                        borderRadius: "8px",
+                        fontSize: "13px",
+                        color: "#166534",
+                      }}
+                    >
+                      <strong>{Object.keys(uploadedDocuments).length}</strong>{" "}
+                      new document
+                      {Object.keys(uploadedDocuments).length !== 1
+                        ? "s"
+                        : ""}{" "}
+                      ready to submit
+                    </div>
+                  )}
                 </div>
               </>
             )}
