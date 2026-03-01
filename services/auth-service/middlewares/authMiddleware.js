@@ -3,38 +3,70 @@
  * Verifies JWT tokens and user permissions
  */
 
-const verifyToken = (req, res, next) => {
-    try {
-        const token = req.headers.authorization?.split(' ')[1];
+const { verifyAccessToken } = require('../services/jwtService');
+const User = require('../models/User');
 
-        if (!token) {
+/**
+ * Middleware to verify JWT token
+ */
+const authMiddleware = async (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
+
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
                 success: false,
                 message: 'No token provided',
             });
         }
 
-        // TODO: Verify JWT token
-        // TODO: Extract user information
-        // TODO: Attach user to request object
+        const token = authHeader.substring(7);
+        const decoded = verifyAccessToken(token);
 
+        // Get user details
+        const user = await User.findById(decoded.userId);
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not found',
+            });
+        }
+
+        // Attach user to request
+        req.user = user;
         next();
     } catch (error) {
-        res.status(401).json({
+        console.error('Auth middleware error:', error);
+        return res.status(401).json({
             success: false,
-            message: 'Invalid token',
-            error: error.message,
+            message: 'Invalid or expired token',
         });
     }
 };
 
+/**
+ * Middleware to check if user is authorized for specific roles
+ */
 const authorizeRole = (roles = []) => {
     return (req, res, next) => {
         try {
-            // TODO: Check if user role is in allowed roles
+            if (!req.user) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'User not authenticated',
+                });
+            }
+
+            if (!roles.includes(req.user.user_type)) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied. Insufficient permissions',
+                });
+            }
+
             next();
         } catch (error) {
-            res.status(403).json({
+            res.status(503).json({
                 success: false,
                 message: 'Unauthorized',
                 error: error.message,
@@ -43,7 +75,35 @@ const authorizeRole = (roles = []) => {
     };
 };
 
+/**
+ * Middleware to check if user is admin
+ */
+const adminMiddleware = (req, res, next) => {
+    return authorizeRole(['admin'])(req, res, next);
+};
+
+/**
+ * Middleware to check if user is doctor
+ */
+const doctorMiddleware = (req, res, next) => {
+    return authorizeRole(['doctor'])(req, res, next);
+};
+
+/**
+ * Middleware to check if user is patient
+ */
+const patientMiddleware = (req, res, next) => {
+    return authorizeRole(['patient'])(req, res, next);
+};
+
+// Legacy exports for backwards compatibility
+const verifyToken = authMiddleware;
+
 module.exports = {
+    authMiddleware,
     verifyToken,
     authorizeRole,
+    adminMiddleware,
+    doctorMiddleware,
+    patientMiddleware,
 };
