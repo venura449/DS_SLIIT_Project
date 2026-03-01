@@ -42,7 +42,7 @@ class User {
      * Find user by id
      */
     static async findById(id) {
-        const query = 'SELECT id, email, name, phone, user_type, is_active, created_at FROM users WHERE id = $1';
+        const query = 'SELECT id, email, name, phone, birthdate, address, emergency_contact, weight, gender, user_type, is_active, created_at FROM users WHERE id = $1';
         const result = await db.query(query, [id]);
         return result.rows[0];
     }
@@ -51,19 +51,23 @@ class User {
      * Update user
      */
     static async update(id, userData) {
-        const { name, phone, userType } = userData;
+        const { name, phone, birthdate, address, emergency_contact, weight, gender } = userData;
 
         const query = `
             UPDATE users 
             SET name = COALESCE($2, name), 
                 phone = COALESCE($3, phone),
-                user_type = COALESCE($4, user_type),
+                birthdate = COALESCE($4, birthdate),
+                address = COALESCE($5, address),
+                emergency_contact = COALESCE($6, emergency_contact),
+                weight = COALESCE($7, weight),
+                gender = COALESCE($8, gender),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = $1
-            RETURNING id, email, name, phone, user_type, updated_at
+            RETURNING id, email, name, phone, birthdate, address, emergency_contact, weight, gender, user_type, updated_at
         `;
 
-        const result = await db.query(query, [id, name, phone, userType]);
+        const result = await db.query(query, [id, name, phone, birthdate, address, emergency_contact, weight, gender]);
         return result.rows[0];
     }
 
@@ -110,6 +114,79 @@ class User {
         `;
         const result = await db.query(query, [limit, offset]);
         return result.rows;
+    }
+
+    /**
+     * Get all users with search, filter and pagination (admin)
+     */
+    static async findAllWithFilters({ search = '', role = '', status = '', limit = 10, offset = 0 }) {
+        const conditions = [];
+        const params = [];
+        let idx = 1;
+
+        if (search) {
+            conditions.push(`(name ILIKE $${idx} OR email ILIKE $${idx})`);
+            params.push(`%${search}%`);
+            idx++;
+        }
+        if (role) {
+            conditions.push(`user_type = $${idx}`);
+            params.push(role);
+            idx++;
+        }
+        if (status === 'active') {
+            conditions.push(`is_active = true`);
+        } else if (status === 'inactive') {
+            conditions.push(`is_active = false`);
+        }
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        const countQuery = `SELECT COUNT(*) FROM users ${where}`;
+        const countResult = await db.query(countQuery, params);
+        const total = parseInt(countResult.rows[0].count, 10);
+
+        const dataQuery = `
+            SELECT id, email, name, phone, user_type, is_active, created_at
+            FROM users
+            ${where}
+            ORDER BY created_at DESC
+            LIMIT $${idx} OFFSET $${idx + 1}
+        `;
+        const dataResult = await db.query(dataQuery, [...params, limit, offset]);
+
+        return { users: dataResult.rows, total };
+    }
+
+    /**
+     * Activate a user
+     */
+    static async activate(id) {
+        const query = `
+            UPDATE users
+            SET is_active = true, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING id
+        `;
+        const result = await db.query(query, [id]);
+        return result.rows[0];
+    }
+
+    /**
+     * Admin update user (name, phone, role)
+     */
+    static async adminUpdate(id, { name, phone, user_type }) {
+        const query = `
+            UPDATE users
+            SET name = COALESCE($2, name),
+                phone = COALESCE($3, phone),
+                user_type = COALESCE($4, user_type),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING id, email, name, phone, user_type, is_active, created_at, updated_at
+        `;
+        const result = await db.query(query, [id, name, phone, user_type]);
+        return result.rows[0];
     }
 }
 
