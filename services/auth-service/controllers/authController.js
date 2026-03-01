@@ -286,10 +286,110 @@ const verifyToken = async (req, res) => {
     }
 };
 
+const updateProfile = async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                message: 'No token provided',
+            });
+        }
+
+        const token = authHeader.substring(7);
+        const decoded = verifyAccessToken(token);
+
+        // Get full user data including password for verification
+        const db = require('../config/postgres');
+        const userQuery = 'SELECT * FROM users WHERE id = $1';
+        const userResult = await db.query(userQuery, [decoded.userId]);
+        const userWithPassword = userResult.rows[0];
+
+        if (!userWithPassword) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not found',
+            });
+        }
+
+        const { name, phone, password } = req.body;
+
+        // Validation
+        if (!name || !phone || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Name, phone, and password are required',
+            });
+        }
+
+        // Verify password
+        const isPasswordValid = await User.verifyPassword(password, userWithPassword.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid password. Please try again.',
+            });
+        }
+
+        // Update user with all profile fields
+        const { birthdate, address, emergency_contact, weight, gender } = req.body;
+        const updatedUser = await User.update(decoded.userId, {
+            name,
+            phone,
+            birthdate,
+            address,
+            emergency_contact,
+            weight,
+            gender
+        });
+
+        // Send Kafka event
+        await sendAuthEvent('USER_PROFILE_UPDATED', {
+            userId: updatedUser.id,
+            email: updatedUser.email,
+            name: updatedUser.name,
+            phone: updatedUser.phone,
+            birthdate: updatedUser.birthdate,
+            address: updatedUser.address,
+            emergency_contact: updatedUser.emergency_contact,
+            weight: updatedUser.weight,
+            gender: updatedUser.gender,
+            updatedAt: updatedUser.updated_at,
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Profile updated successfully',
+            data: {
+                user: {
+                    id: updatedUser.id,
+                    email: updatedUser.email,
+                    name: updatedUser.name,
+                    phone: updatedUser.phone,
+                    birthdate: updatedUser.birthdate,
+                    address: updatedUser.address,
+                    emergency_contact: updatedUser.emergency_contact,
+                    weight: updatedUser.weight,
+                    gender: updatedUser.gender,
+                    userType: updatedUser.user_type,
+                },
+            },
+        });
+    } catch (error) {
+        console.error('Profile update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Profile update failed',
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     register,
     login,
     logout,
     refreshToken,
     verifyToken,
+    updateProfile,
 };

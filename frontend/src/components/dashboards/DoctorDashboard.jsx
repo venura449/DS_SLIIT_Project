@@ -1,5 +1,6 @@
 ﻿import { useState } from "react";
 import { logoutUser } from "../../utils/authService";
+import UpdateProfileForm from "../UpdateProfileForm";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -19,12 +20,18 @@ const pageTitles = {
   verification: "Verification Status",
 };
 
-const DoctorDashboard = ({ user, onLogout }) => {
+const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
+  const [showProfile, setShowProfile] = useState(false);
+  const [user, setUser] = useState(initialUser);
 
   const handleLogout = () => {
     logoutUser();
     if (onLogout) onLogout();
+  };
+
+  const handleProfileUpdate = (updatedUser) => {
+    setUser(updatedUser);
   };
 
   return (
@@ -188,7 +195,25 @@ const DoctorDashboard = ({ user, onLogout }) => {
           color: #7a8fa6;
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 12px;
+        }
+        .dd-profile-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, rgba(10, 61, 98, 0.1), rgba(125, 216, 248, 0.1));
+          border: 1.5px solid #e4eaf0;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s;
+          font-size: 16px;
+        }
+        .dd-profile-btn:hover {
+          background: linear-gradient(135deg, rgba(10, 61, 98, 0.15), rgba(125, 216, 248, 0.15));
+          border-color: #7dd8f8;
+          transform: scale(1.05);
         }
         .dd-content { padding: 22px 24px; }
 
@@ -371,7 +396,13 @@ const DoctorDashboard = ({ user, onLogout }) => {
           <header className="dd-topbar">
             <span className="dd-topbar-title">{pageTitles[activeTab]}</span>
             <div className="dd-topbar-right">
-              <span>👨‍⚕️</span>
+              <button
+                className="dd-profile-btn"
+                onClick={() => setShowProfile(true)}
+                title="Edit profile"
+              >
+                👨‍⚕️
+              </button>
               <span>Dr. {user?.name || "Doctor"}</span>
             </div>
           </header>
@@ -573,6 +604,14 @@ const DoctorDashboard = ({ user, onLogout }) => {
           </div>
         </div>
       </div>
+
+      {showProfile && (
+        <UpdateProfileForm
+          user={user}
+          onClose={() => setShowProfile(false)}
+          onSuccess={handleProfileUpdate}
+        />
+      )}
     </>
   );
 };

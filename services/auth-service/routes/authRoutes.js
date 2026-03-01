@@ -37,4 +37,11 @@ router.post('/refresh-token', authController.refreshToken);
  */
 router.get('/verify', authController.verifyToken);
 
+/**
+ * @route   PUT /api/auth/update-profile
+ * @desc    Update user profile (name and phone only, email cannot be updated)
+ * @access  Private
+ */
+router.put('/update-profile', authController.updateProfile);
+
 module.exports = router;
