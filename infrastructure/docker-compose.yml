@@ -119,9 +119,12 @@ services:
       DB_NAME: appointment_db
       DB_USER: admin
       DB_PASSWORD: password
+      JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      DOCTOR_SERVICE_URL: http://doctor-service:3003
       KAFKA_BROKER: kafka:9092
     depends_on:
       - postgres-appointment
+      - doctor-service
       - kafka
     networks:
       - healthcare-network

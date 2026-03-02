@@ -14,55 +14,8 @@ pool.on('error', (err) => {
 });
 
 const initializeDatabase = async () => {
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS appointments (
-            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            patient_id       VARCHAR(255) NOT NULL,
-            doctor_id        VARCHAR(255) NOT NULL,
-            slot_id          UUID,
-            appointment_date DATE NOT NULL,
-            start_time       TIME NOT NULL,
-            end_time         TIME NOT NULL,
-            status           VARCHAR(20) DEFAULT 'pending',
-            reason           TEXT,
-            notes            TEXT,
-            doctor_name      VARCHAR(255),
-            patient_name     VARCHAR(255),
-            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_uq_active_booking
-            ON appointments(doctor_id, appointment_date, start_time)
-            WHERE status != 'cancelled';
-
-        CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id);
-        CREATE INDEX IF NOT EXISTS idx_appointments_doctor  ON appointments(doctor_id);
-    `);
-
-    // Migrate: add patient_name column, fix status constraint & default for existing DBs
-    await pool.query(`
-        ALTER TABLE appointments ADD COLUMN IF NOT EXISTS patient_name VARCHAR(255);
-        ALTER TABLE appointments ALTER COLUMN status SET DEFAULT 'pending';
-        ALTER TABLE appointments DROP CONSTRAINT IF EXISTS chk_appt_status;
-        ALTER TABLE appointments ADD CONSTRAINT chk_appt_status
-            CHECK (status IN ('pending','confirmed','cancelled','completed'));
-    `);
-
-    // Messages table for doctor-patient conversation per appointment
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS appointment_messages (
-            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
-            sender_id      VARCHAR(255) NOT NULL,
-            sender_role    VARCHAR(20) NOT NULL CHECK (sender_role IN ('patient','doctor')),
-            message        TEXT NOT NULL,
-            sent_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_messages_appointment ON appointment_messages(appointment_id);
-    `);
-
-    console.log('Patient DB tables initialized');
+    // Patient profile tables will be added here as the patient service is built out
+    console.log('Patient DB initialized');
 };
 
 const query = async (text, params) => {

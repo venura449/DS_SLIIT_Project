@@ -1,7 +1,7 @@
 import { authenticatedFetch } from './authService';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
-const APPT_API = `${API_BASE}/patients/api/v1/appointments`;
+const APPT_API = `${API_BASE}/appointments/api/v1/appointments`;
 
 /* ── Doctor browse (public — no token needed) ──────────────────── */
 
