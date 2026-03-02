@@ -151,7 +151,7 @@ const rejectVerification = async (doctorId, reason) => {
 
 const getAllSubmissions = async () => {
     const statusRows = await db.query(
-        `SELECT * FROM verification_status WHERE documents_submitted > 0 ORDER BY last_updated DESC`
+        `SELECT * FROM verification_status WHERE status != 'no_documents' ORDER BY last_updated DESC`
     );
 
     return Promise.all(

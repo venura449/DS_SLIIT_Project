@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
 dotenv.config();
@@ -16,7 +17,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const patientRoutes = require('./routes/patientRoutes');
+const appointmentRoutes = require('./routes/appointmentRoutes');
 app.use('/api/patients', patientRoutes);
+app.use('/api/v1/appointments', appointmentRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -36,8 +39,15 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3002;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`Patient Service running on port ${PORT}`);
+    try {
+        await initializeDatabase();
+        console.log('Database initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize database:', error);
+        process.exit(1);
+    }
 });
 
 module.exports = server;

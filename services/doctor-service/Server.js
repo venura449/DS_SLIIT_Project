@@ -24,9 +24,11 @@ app.use('/uploads/doctor-verification', express.static(uploadsDir));
 const doctorRoutes = require('./routes/doctorRoutes');
 const verificationRoutes = require('./routes/verificationRoutes');
 const scheduleRoutes = require('./routes/scheduleRoutes');
+const publicDoctorRoutes = require('./routes/publicDoctorRoutes');
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/v1/verification', verificationRoutes);
 app.use('/api/v1/schedule', scheduleRoutes);
+app.use('/api/v1/public', publicDoctorRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

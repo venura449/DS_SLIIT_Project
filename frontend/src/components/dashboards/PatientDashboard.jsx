@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { logoutUser } from "../../utils/authService";
 import UpdateProfileForm from "../UpdateProfileForm";
+import BookAppointment from "../BookAppointment";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -448,25 +449,12 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
 
             {activeTab === "appointments" && (
               <>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "18px",
-                  }}
-                >
-                  <div className="pd-page-head" style={{ marginBottom: 0 }}>
-                    <h2>Appointments</h2>
-                    <p>Manage your upcoming and past appointments.</p>
-                  </div>
-                  <button className="pd-btn pd-btn-primary">+ Book New</button>
+                <div className="pd-page-head">
+                  <h2>Appointments</h2>
+                  <p>Manage your upcoming and past appointments.</p>
                 </div>
                 <div className="pd-section">
-                  <div className="pd-empty">
-                    <div className="pd-empty-icon">📅</div>
-                    <p>No appointments yet. Book one to get started.</p>
-                  </div>
+                  <BookAppointment />
                 </div>
               </>
             )}

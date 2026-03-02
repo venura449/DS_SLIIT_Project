@@ -73,6 +73,15 @@ const initializeDatabase = async () => {
 
         CREATE INDEX IF NOT EXISTS idx_slots_schedule ON doctor_schedule_slots(schedule_id);
         CREATE INDEX IF NOT EXISTS idx_slots_doctor   ON doctor_schedule_slots(doctor_id);
+
+        CREATE TABLE IF NOT EXISTS doctor_profiles (
+            doctor_id        VARCHAR(255) PRIMARY KEY,
+            name             VARCHAR(255),
+            specialization   VARCHAR(255),
+            consultation_fee DECIMAL(10,2),
+            bio              TEXT,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     `;
 
     await pool.query(createTablesQuery);

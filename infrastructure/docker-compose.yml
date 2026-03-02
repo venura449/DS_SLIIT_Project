@@ -74,8 +74,11 @@ services:
       DB_NAME: patient_db
       DB_USER: admin
       DB_PASSWORD: password
+      JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      DOCTOR_SERVICE_URL: http://doctor-service:3003
     depends_on:
       - postgres-patient
+      - doctor-service
     volumes:
       - ../services/patient-service/uploads:/app/uploads
     networks:
