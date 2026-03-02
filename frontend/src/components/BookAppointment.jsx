@@ -86,9 +86,11 @@ const BookAppointment = () => {
   // Telemedicine session
   const [jitsiSession, setJitsiSession] = useState(null); // { roomName, displayName }
   const [fetchingSession, setFetchingSession] = useState(null); // appointmentId being fetched
+  const [endedSessions, setEndedSessions] = useState(new Set()); // appointment IDs whose session is ended
 
   // My bookings
   const [myBookings, setMyBookings] = useState([]);
+  const [bookingFilter, setBookingFilter] = useState("");
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [bookingsError, setBookingsError] = useState("");
   const [cancellingId, setCancellingId] = useState(null);
@@ -141,9 +143,21 @@ const BookAppointment = () => {
   const loadMyBookings = useCallback(async () => {
     setBookingsLoading(true);
     setBookingsError("");
-    const res = await appointmentService.getMyBookings();
-    if (res.success) setMyBookings(res.data || []);
-    else setBookingsError(res.error);
+    const [apptRes, teleRes] = await Promise.all([
+      appointmentService.getMyBookings(),
+      telemedicineService.getSessions(),
+    ]);
+    if (apptRes.success) setMyBookings(apptRes.data || []);
+    else setBookingsError(apptRes.error);
+    if (teleRes.success && Array.isArray(teleRes.data)) {
+      setEndedSessions(
+        new Set(
+          teleRes.data
+            .filter((s) => s.status === "ended")
+            .map((s) => s.appointment_id),
+        ),
+      );
+    }
     setBookingsLoading(false);
   }, []);
 
@@ -165,20 +179,39 @@ const BookAppointment = () => {
       reason: bookingReason,
       doctorName: selectedDoctor.name,
       patientName: getUserData()?.name || "",
+      isTelemedicine,
     });
     if (res.success) {
       setBookingSuccess({
         doctor: selectedDoctor.name,
         date: fmtDate(bookingSlot.appointmentDate),
         time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
+        isTelemedicine,
       });
       setBookingSlot(null);
+      setIsTelemedicine(false);
       // Refresh slots to reflect the booking
       loadSlots(selectedDoctor, currentWeek);
     } else {
       setBookingError(res.error);
     }
     setBookingLoading(false);
+  };
+
+  /* ── join telemedicine meeting ─────────────────────────────── */
+
+  const handleJoinMeeting = async (appt) => {
+    setFetchingSession(appt.id);
+    const res = await telemedicineService.getSessionByAppointment(appt.id);
+    if (res.success && res.data) {
+      setJitsiSession({
+        roomName: res.data.meeting_room,
+        displayName: getUserData()?.name || "Patient",
+      });
+    } else {
+      alert("Meeting room not available yet. Please try again shortly.");
+    }
+    setFetchingSession(null);
   };
 
   /* ── chat ──────────────────────────────────────────────────── */
@@ -349,6 +382,10 @@ const BookAppointment = () => {
         .ba-status-badge.pending { background:#fef9c3; color:#a16207; border:1px solid #fde047; }
         .ba-status-badge.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
         .ba-status-badge.cancelled { background:#f3f4f6; color:#9ca3af; border:1px solid #e5e7eb; }
+        .ba-status-badge.ended { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+        .ba-filter-bar { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; }
+        .ba-filter-btn { padding:5px 14px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; }
+        .ba-filter-btn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
         .ba-status-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
         .ba-cancel-btn { padding:5px 12px; border-radius:7px; border:1px solid #fca5a5; background:#fff1f1; color:#dc2626; font-size:11px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all .15s; flex-shrink:0; }
         .ba-cancel-btn:hover { background:#fee2e2; }
@@ -599,6 +636,25 @@ const BookAppointment = () => {
       {view === "my-bookings" && (
         <>
           {bookingsError && <div className="ba-error">⚠ {bookingsError}</div>}
+          {!bookingsLoading && myBookings.length > 0 && (
+            <div className="ba-filter-bar">
+              {[
+                { key: "", label: "All" },
+                { key: "pending", label: "⏳ Pending" },
+                { key: "confirmed", label: "✅ Confirmed" },
+                { key: "cancelled", label: "❌ Cancelled" },
+                { key: "ended", label: "⏹ Ended" },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  className={`ba-filter-btn${bookingFilter === key ? " active" : ""}`}
+                  onClick={() => setBookingFilter(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {bookingsLoading ? (
             <div className="ba-loading">
               <div className="ba-spinner" /> Loading appointments…
@@ -610,149 +666,171 @@ const BookAppointment = () => {
             </div>
           ) : (
             <div className="ba-bookings-list">
-              {myBookings.map((b) => (
-                <React.Fragment key={b.id}>
-                  <div
-                    className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}`}
-                  >
+              {(() => {
+                const fb =
+                  bookingFilter === "ended"
+                    ? myBookings.filter((b) => endedSessions.has(b.id))
+                    : bookingFilter
+                      ? myBookings.filter((b) => b.status === bookingFilter)
+                      : myBookings;
+                if (fb.length === 0)
+                  return (
+                    <div className="ba-bookings-empty">
+                      <div className="ba-bookings-empty-icon">🔍</div>
+                      <p>No appointments match this filter.</p>
+                    </div>
+                  );
+                return fb.map((b) => (
+                  <React.Fragment key={b.id}>
                     <div
-                      className={`ba-booking-icon${b.status === "cancelled" ? " cancelled" : ""}`}
+                      className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}`}
                     >
-                      {b.status === "confirmed"
-                        ? "📅"
-                        : b.status === "completed"
-                          ? "✅"
-                          : "❌"}
-                    </div>
-                    <div className="ba-booking-body">
-                      <div className="ba-booking-doctor">
-                        Dr. {b.doctor_name || "Doctor"}
-                        <span
-                          className={`ba-status-badge ${b.status}`}
-                          style={{ marginLeft: 8 }}
-                        >
-                          {b.status === "pending"
-                            ? "⏳ Awaiting Approval"
-                            : b.status === "confirmed"
-                              ? "✅ Confirmed"
-                              : b.status === "cancelled"
-                                ? "❌ Cancelled"
-                                : b.status === "completed"
-                                  ? "✔ Completed"
-                                  : b.status.charAt(0).toUpperCase() +
-                                    b.status.slice(1)}
-                        </span>
-                        {b.is_telemedicine && (
-                          <span className="ba-tele-badge">📹 Telemedicine</span>
-                        )}
+                      <div
+                        className={`ba-booking-icon${b.status === "cancelled" ? " cancelled" : ""}`}
+                      >
+                        {b.status === "confirmed"
+                          ? "📅"
+                          : b.status === "completed"
+                            ? "✅"
+                            : "❌"}
                       </div>
-                      <div className="ba-booking-meta">
-                        {fmtDate(
-                          b.appointment_date?.split("T")[0] ||
-                            b.appointment_date,
+                      <div className="ba-booking-body">
+                        <div className="ba-booking-doctor">
+                          Dr. {b.doctor_name || "Doctor"}
+                          <span
+                            className={`ba-status-badge ${endedSessions.has(b.id) ? "ended" : b.status}`}
+                            style={{ marginLeft: 8 }}
+                          >
+                            {endedSessions.has(b.id)
+                              ? "⏹ Ended"
+                              : b.status === "pending"
+                                ? "⏳ Awaiting Approval"
+                                : b.status === "confirmed"
+                                  ? "✅ Confirmed"
+                                  : b.status === "cancelled"
+                                    ? "❌ Cancelled"
+                                    : b.status === "completed"
+                                      ? "✔ Completed"
+                                      : b.status.charAt(0).toUpperCase() +
+                                        b.status.slice(1)}
+                          </span>
+                          {b.is_telemedicine && (
+                            <span className="ba-tele-badge">
+                              📹 Telemedicine
+                            </span>
+                          )}
+                        </div>
+                        <div className="ba-booking-meta">
+                          {fmtDate(
+                            b.appointment_date?.split("T")[0] ||
+                              b.appointment_date,
+                          )}{" "}
+                          &nbsp;·&nbsp; {fmt12(b.start_time)} –{" "}
+                          {fmt12(b.end_time)}
+                        </div>
+                        {b.reason && (
+                          <span className="ba-booking-reason" title={b.reason}>
+                            {b.reason}
+                          </span>
+                        )}
+                      </div>{" "}
+                      {!!b.is_telemedicine &&
+                        b.status === "confirmed" &&
+                        !endedSessions.has(b.id) && (
+                          <button
+                            className="ba-join-btn"
+                            onClick={() => handleJoinMeeting(b)}
+                            disabled={fetchingSession === b.id}
+                          >
+                            {fetchingSession === b.id ? "\u2026" : "📹 Join"}
+                          </button>
                         )}{" "}
-                        &nbsp;·&nbsp; {fmt12(b.start_time)} –{" "}
-                        {fmt12(b.end_time)}
-                      </div>
-                      {b.reason && (
-                        <span className="ba-booking-reason" title={b.reason}>
-                          {b.reason}
-                        </span>
-                      )}
-                    </div>{" "}
-                    {b.is_telemedicine && b.status === "confirmed" && (
-                      <button
-                        className="ba-join-btn"
-                        onClick={() => handleJoinMeeting(b)}
-                        disabled={fetchingSession === b.id}
-                      >
-                        {fetchingSession === b.id ? "\u2026" : "📹 Join"}
-                      </button>
-                    )}{" "}
-                    {b.status === "confirmed" && (
-                      <button
-                        className="ba-cancel-btn"
-                        onClick={() => handleCancel(b.id)}
-                        disabled={cancellingId === b.id}
-                      >
-                        {cancellingId === b.id ? "…" : "Cancel"}
-                      </button>
-                    )}
-                    {(b.status === "confirmed" ||
-                      b.status === "pending" ||
-                      b.status === "completed") && (
-                      <button
-                        className="ba-chat-btn"
-                        onClick={() =>
-                          chatApptId === b.id ? closeChat() : openChat(b.id)
-                        }
-                      >
-                        {chatApptId === b.id ? "Close" : "💬 Chat"}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Inline chat panel — sibling of the card row */}
-                  {chatApptId === b.id && (
-                    <div className="ba-chat-panel">
-                      <div className="ba-chat-messages">
-                        {chatMessages.length === 0 && (
-                          <div
-                            style={{
-                              textAlign: "center",
-                              color: "#7a8fa6",
-                              fontSize: 13,
-                              padding: "12px 0",
-                            }}
-                          >
-                            No messages yet. Send a message to your doctor.
-                          </div>
-                        )}
-                        {chatMessages.map((msg) => (
-                          <div
-                            key={msg.id}
-                            className={`ba-msg ${msg.sender_role}`}
-                          >
-                            {msg.message}
-                            <div className="ba-msg-meta">
-                              {msg.sender_role === "patient"
-                                ? "You"
-                                : `Dr. ${b.doctor_name || "Doctor"}`}
-                              &nbsp;·&nbsp;
-                              {new Date(msg.sent_at).toLocaleTimeString(
-                                "en-US",
-                                { hour: "2-digit", minute: "2-digit" },
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                        <div ref={chatEndRef} />
-                      </div>
-                      <div className="ba-chat-input-row">
-                        <textarea
-                          rows={2}
-                          placeholder="Type a message…"
-                          value={chatInput}
-                          onChange={(e) => setChatInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              handleSendMessage();
-                            }
-                          }}
-                        />
+                      {b.status === "pending" && (
                         <button
-                          className="ba-chat-send-btn"
-                          disabled={chatSending || !chatInput.trim()}
-                          onClick={handleSendMessage}
+                          className="ba-cancel-btn"
+                          onClick={() => handleCancel(b.id)}
+                          disabled={cancellingId === b.id}
                         >
-                          Send
+                          {cancellingId === b.id ? "…" : "Cancel"}
                         </button>
-                      </div>
+                      )}
+                      {(b.status === "confirmed" ||
+                        b.status === "pending" ||
+                        b.status === "completed") &&
+                        !endedSessions.has(b.id) && (
+                          <button
+                            className="ba-chat-btn"
+                            onClick={() =>
+                              chatApptId === b.id ? closeChat() : openChat(b.id)
+                            }
+                          >
+                            {chatApptId === b.id ? "Close" : "💬 Chat"}
+                          </button>
+                        )}
                     </div>
-                  )}
-                </React.Fragment>
-              ))}
+
+                    {/* Inline chat panel — sibling of the card row */}
+                    {chatApptId === b.id && (
+                      <div className="ba-chat-panel">
+                        <div className="ba-chat-messages">
+                          {chatMessages.length === 0 && (
+                            <div
+                              style={{
+                                textAlign: "center",
+                                color: "#7a8fa6",
+                                fontSize: 13,
+                                padding: "12px 0",
+                              }}
+                            >
+                              No messages yet. Send a message to your doctor.
+                            </div>
+                          )}
+                          {chatMessages.map((msg) => (
+                            <div
+                              key={msg.id}
+                              className={`ba-msg ${msg.sender_role}`}
+                            >
+                              {msg.message}
+                              <div className="ba-msg-meta">
+                                {msg.sender_role === "patient"
+                                  ? "You"
+                                  : `Dr. ${b.doctor_name || "Doctor"}`}
+                                &nbsp;·&nbsp;
+                                {new Date(msg.sent_at).toLocaleTimeString(
+                                  "en-US",
+                                  { hour: "2-digit", minute: "2-digit" },
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          <div ref={chatEndRef} />
+                        </div>
+                        <div className="ba-chat-input-row">
+                          <textarea
+                            rows={2}
+                            placeholder="Type a message…"
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendMessage();
+                              }
+                            }}
+                          />
+                          <button
+                            className="ba-chat-send-btn"
+                            disabled={chatSending || !chatInput.trim()}
+                            onClick={handleSendMessage}
+                          >
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ));
+              })()}
             </div>
           )}
         </>

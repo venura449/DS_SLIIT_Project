@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as appointmentService from "../utils/appointmentService";
+import * as telemedicineService from "../utils/telemedicineService";
 import {
   createPrescription,
   updatePrescription,
@@ -1012,6 +1013,14 @@ const PrescriptionManager = () => {
   const [prescriptions, setPrescriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [endedSessions, setEndedSessions] = useState(() => {
+    try {
+      const stored = localStorage.getItem("doctorEndedSessions");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  }); // appointment IDs with ended sessions
 
   // Modal states
   const [formAppt, setFormAppt] = useState(null); // appointment for new/edit form
@@ -1021,9 +1030,10 @@ const PrescriptionManager = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
-    const [apptRes, prescRes] = await Promise.all([
+    const [apptRes, prescRes, teleRes] = await Promise.all([
       appointmentService.getDoctorAppointments(""),
       getDoctorPrescriptions(),
+      telemedicineService.getSessions(),
     ]);
     if (apptRes.success) {
       setConfirmedAppointments(
@@ -1033,6 +1043,21 @@ const PrescriptionManager = () => {
       setError("Failed to load appointments.");
     }
     if (prescRes.success) setPrescriptions(prescRes.data || []);
+    if (teleRes.success && Array.isArray(teleRes.data)) {
+      const teleEndedIds = teleRes.data
+        .filter((s) => s.status === "ended")
+        .map((s) => s.appointment_id);
+      const stored = (() => {
+        try {
+          return JSON.parse(
+            localStorage.getItem("doctorEndedSessions") || "[]",
+          );
+        } catch {
+          return [];
+        }
+      })();
+      setEndedSessions(new Set([...teleEndedIds, ...stored]));
+    }
     setLoading(false);
   }, []);
 
@@ -1145,6 +1170,35 @@ const PrescriptionManager = () => {
                 <div className="pm-appt-info">
                   <div className="pm-appt-name">
                     {appt.patient_name || "Patient"}
+                    {appt.is_telemedicine && (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          marginLeft: 8,
+                          padding: "2px 8px",
+                          borderRadius: 8,
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          ...(endedSessions.has(appt.id)
+                            ? {
+                                background: "#fef2f2",
+                                border: "1px solid #fca5a5",
+                                color: "#dc2626",
+                              }
+                            : {
+                                background: "#f0fdf4",
+                                border: "1px solid #86efac",
+                                color: "#15803d",
+                              }),
+                        }}
+                      >
+                        {endedSessions.has(appt.id)
+                          ? "⏹ Session Ended"
+                          : "📹 Telemedicine"}
+                      </span>
+                    )}
                   </div>
                   <div className="pm-appt-sub">
                     {dateStr(appt.appointment_date)}&nbsp;·&nbsp;

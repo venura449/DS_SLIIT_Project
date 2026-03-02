@@ -81,6 +81,15 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   // Telemedicine meeting
   const [jitsiSession, setJitsiSession] = useState(null);
   const [fetchingSession, setFetchingSession] = useState(null);
+  const [endingSession, setEndingSession] = useState(null); // appointmentId being ended
+  const [endedSessions, setEndedSessions] = useState(() => {
+    try {
+      const stored = localStorage.getItem("doctorEndedSessions");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  }); // appointmentIds whose sessions are ended
 
   // Patient medical records panel (per appointment)
   const [recordsApptId, setRecordsApptId] = useState(null);
@@ -156,14 +165,35 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
     loadVerification();
   }, []);
 
-  // Load appointments when tab or filter changes
+  // Load appointments when tab or filter changes; also sync ended telemedicine sessions
   useEffect(() => {
     if (activeTab !== "appointments") return;
     setApptLoading(true);
     setApptError("");
-    appointmentService.getDoctorAppointments(apptFilter).then((res) => {
-      if (res.success) setAppointments(res.data || []);
-      else setApptError(res.error || "Failed to load appointments");
+    Promise.all([
+      appointmentService.getDoctorAppointments(
+        apptFilter === "ended" ? "" : apptFilter,
+      ),
+      telemedicineService.getSessions(),
+    ]).then(([apptRes, teleRes]) => {
+      if (apptRes.success) setAppointments(apptRes.data || []);
+      else setApptError(apptRes.error || "Failed to load appointments");
+      if (teleRes.success && Array.isArray(teleRes.data)) {
+        const teleEndedIds = teleRes.data
+          .filter((s) => s.status === "ended")
+          .map((s) => s.appointment_id);
+        // Merge with localStorage-persisted ended IDs (covers in-person sessions)
+        const stored = (() => {
+          try {
+            return JSON.parse(
+              localStorage.getItem("doctorEndedSessions") || "[]",
+            );
+          } catch {
+            return [];
+          }
+        })();
+        setEndedSessions(new Set([...teleEndedIds, ...stored]));
+      }
       setApptLoading(false);
     });
   }, [activeTab, apptFilter]);
@@ -192,11 +222,45 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         roomName: res.data.meeting_room,
         displayName: `Dr. ${user?.name || "Doctor"}`,
         sessionId: res.data.id,
+        appointmentId: appt.id,
       });
     } else {
       alert("Meeting room not available yet. Please try again shortly.");
     }
     setFetchingSession(null);
+  };
+
+  const handleEndConsultation = async (appt) => {
+    if (
+      !window.confirm(
+        `End consultation with ${appt.patient_name || "this patient"}? The session will be closed and removed from your active list.`,
+      )
+    )
+      return;
+    setEndingSession(appt.id);
+    // For telemedicine appointments, also mark the video session as ended in the DB
+    if (appt.is_telemedicine) {
+      const sessionRes = await telemedicineService.getSessionByAppointment(
+        appt.id,
+      );
+      if (sessionRes.success && sessionRes.data) {
+        await telemedicineService.endSession(sessionRes.data.id);
+      }
+    }
+    // Persist to localStorage so in-person ended state survives page refresh
+    const stored = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("doctorEndedSessions") || "[]");
+      } catch {
+        return [];
+      }
+    })();
+    localStorage.setItem(
+      "doctorEndedSessions",
+      JSON.stringify([...new Set([...stored, appt.id])]),
+    );
+    setEndedSessions((prev) => new Set([...prev, appt.id]));
+    setEndingSession(null);
   };
 
   const openChat = async (apptId) => {
@@ -1212,11 +1276,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-badge.pending { background:#fef9c3; color:#a16207; border:1px solid #fde047; }
                   .da-badge.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
                   .da-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
+                  .da-badge.ended { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
                   .da-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; }
                   .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
                   .da-approve-btn:disabled { opacity:.5; cursor:default; }
                   .da-join-btn { padding:6px 14px; border-radius:8px; border:none; background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; font-size:12px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; }
                   .da-join-btn:disabled { opacity:.6; cursor:default; }
+                  .da-end-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #dc2626; background:#fff; color:#dc2626; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-end-btn:disabled { opacity:.5; cursor:default; }
                   .da-tele-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:8px; background:#f0fdf4; border:1px solid #86efac; color:#15803d; font-size:10.5px; font-weight:700; margin-left:6px; }
                   .da-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; }
                   .da-chat-panel { border-top:1.5px solid #e4eaf0; background:#f8fafc; }
@@ -1261,6 +1328,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                     { key: "today", label: "Today" },
                     { key: "upcoming", label: "Upcoming" },
                     { key: "", label: "All" },
+                    { key: "ended", label: "⏹ Ended" },
                   ].map(({ key, label }) => (
                     <button
                       key={key}
@@ -1277,8 +1345,19 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                       marginLeft: "auto",
                     }}
                   >
-                    {appointments.length} appointment
-                    {appointments.length !== 1 ? "s" : ""}
+                    {
+                      (apptFilter === "ended"
+                        ? appointments.filter((a) => endedSessions.has(a.id))
+                        : appointments
+                      ).length
+                    }{" "}
+                    appointment
+                    {(apptFilter === "ended"
+                      ? appointments.filter((a) => endedSessions.has(a.id))
+                      : appointments
+                    ).length !== 1
+                      ? "s"
+                      : ""}
                   </span>
                 </div>
 
@@ -1296,10 +1375,16 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   >
                     {apptError}
                   </div>
-                ) : appointments.length === 0 ? (
+                ) : (apptFilter === "ended"
+                    ? appointments.filter((a) => endedSessions.has(a.id))
+                    : appointments
+                  ).length === 0 ? (
                   <div className="da-empty">No appointments found.</div>
                 ) : (
-                  appointments.map((appt) => {
+                  (apptFilter === "ended"
+                    ? appointments.filter((a) => endedSessions.has(a.id))
+                    : appointments
+                  ).map((appt) => {
                     const initials = appt.patient_name
                       ? appt.patient_name
                           .split(" ")
@@ -1352,12 +1437,16 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                             className="da-actions"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span className={`da-badge ${appt.status}`}>
-                              {appt.status === "pending"
-                                ? "⏳ Pending"
-                                : appt.status === "confirmed"
-                                  ? "✅ Confirmed"
-                                  : "✔ Completed"}
+                            <span
+                              className={`da-badge ${endedSessions.has(appt.id) ? "ended" : appt.status}`}
+                            >
+                              {endedSessions.has(appt.id)
+                                ? "⏹ Ended"
+                                : appt.status === "pending"
+                                  ? "⏳ Pending"
+                                  : appt.status === "confirmed"
+                                    ? "✅ Confirmed"
+                                    : "✔ Completed"}
                             </span>
                             {appt.status === "pending" && (
                               <button
@@ -1368,8 +1457,9 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                 {approvingId === appt.id ? "…" : "Approve"}
                               </button>
                             )}
-                            {appt.is_telemedicine &&
-                              appt.status === "confirmed" && (
+                            {!!appt.is_telemedicine &&
+                              appt.status === "confirmed" &&
+                              !endedSessions.has(appt.id) && (
                                 <button
                                   className="da-join-btn"
                                   disabled={fetchingSession === appt.id}
@@ -1378,6 +1468,16 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                   {fetchingSession === appt.id
                                     ? "…"
                                     : "📹 Join"}
+                                </button>
+                              )}
+                            {appt.status === "confirmed" &&
+                              !endedSessions.has(appt.id) && (
+                                <button
+                                  className="da-end-btn"
+                                  disabled={endingSession === appt.id}
+                                  onClick={() => handleEndConsultation(appt)}
+                                >
+                                  {endingSession === appt.id ? "…" : "⏹ End"}
                                 </button>
                               )}
                             <button
@@ -1390,14 +1490,16 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                 ? "🗂 Close"
                                 : "🗂 Records"}
                             </button>
-                            <button
-                              className="da-chat-btn"
-                              onClick={() =>
-                                isChatOpen ? closeChat() : openChat(appt.id)
-                              }
-                            >
-                              {isChatOpen ? "Close" : "💬 Chat"}
-                            </button>
+                            {!endedSessions.has(appt.id) && (
+                              <button
+                                className="da-chat-btn"
+                                onClick={() =>
+                                  isChatOpen ? closeChat() : openChat(appt.id)
+                                }
+                              >
+                                {isChatOpen ? "Close" : "💬 Chat"}
+                              </button>
+                            )}
                           </div>
                         </div>
 
