@@ -47,6 +47,32 @@ const initializeDatabase = async () => {
             rejected_at       TIMESTAMP,
             rejection_reason  TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS doctor_schedules (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            doctor_id     VARCHAR(255) NOT NULL UNIQUE,
+            schedule_type VARCHAR(20) NOT NULL DEFAULT 'recurring'
+                CONSTRAINT chk_schedule_type CHECK (schedule_type IN ('recurring','reset')),
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sched_doctor ON doctor_schedules(doctor_id);
+
+        CREATE TABLE IF NOT EXISTS doctor_schedule_slots (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            schedule_id  UUID NOT NULL REFERENCES doctor_schedules(id) ON DELETE CASCADE,
+            doctor_id    VARCHAR(255) NOT NULL,
+            day_of_week  INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+            start_time   TIME NOT NULL,
+            end_time     TIME NOT NULL,
+            is_available BOOLEAN DEFAULT TRUE,
+            week_start   DATE,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_slots_schedule ON doctor_schedule_slots(schedule_id);
+        CREATE INDEX IF NOT EXISTS idx_slots_doctor   ON doctor_schedule_slots(doctor_id);
     `;
 
     await pool.query(createTablesQuery);

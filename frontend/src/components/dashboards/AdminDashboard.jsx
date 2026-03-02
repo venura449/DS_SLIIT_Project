@@ -794,6 +794,8 @@ function DoctorVerification() {
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
 
   const DOC_LABELS = {
     license: "Medical License",
@@ -945,13 +947,21 @@ function DoctorVerification() {
     );
   };
 
-  const filtered = statusFilter
+  const allFiltered = statusFilter
     ? (Array.isArray(submissions) ? submissions : []).filter(
         (s) => s.status === statusFilter,
       )
     : Array.isArray(submissions)
       ? submissions
       : [];
+
+  const totalPages = Math.ceil(allFiltered.length / itemsPerPage);
+  const safeCurrentPage =
+    currentPage > totalPages && totalPages > 0 ? totalPages : currentPage;
+  const filtered = allFiltered.slice(
+    (safeCurrentPage - 1) * itemsPerPage,
+    safeCurrentPage * itemsPerPage,
+  );
 
   return (
     <>
@@ -976,6 +986,14 @@ function DoctorVerification() {
         .dv-doc-link { margin-top:6px; display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:5px; background:#eff6ff; color:#1d4ed8; font-size:11.5px; font-weight:600; text-decoration:none; border:1px solid #93c5fd; transition:all 0.15s; width:fit-content; }
         .dv-doc-link:hover { background:#dbeafe; }
         .dv-acts { display:flex; gap:6px; align-items:center; }
+        .dv-pagination { display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding-top:12px; border-top:1px solid #e4eaf0; }
+        .dv-pagination-info { font-size:12px; color:#7a8fa6; }
+        .dv-pagination-btns { display:flex; gap:4px; }
+        .dv-pg-btn { padding:4px 10px; border-radius:5px; border:1px solid #e4eaf0; background:#f8fafc; color:#0a3d62; font-size:12px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all 0.15s; }
+        .dv-pg-btn:hover:not(:disabled) { border-color:#0a3d62; background:#eff6ff; }
+        .dv-pg-btn:disabled { opacity:0.5; cursor:default; }
+        .dv-pg-btn.active { background:#0a3d62; color:#fff; border-color:#0a3d62; }
+        .dv-pg-ellipsis { padding:4px 6px; color:#7a8fa6; font-size:12px; }
         .dv-approve { padding:4px 11px; font-size:11.5px; border-radius:6px; border:1px solid #86efac; background:#f0fdf4; color:#15803d; font-family:'DM Sans',sans-serif; font-weight:600; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
         .dv-approve:hover { background:#dcfce7; }
         .dv-approve:disabled { opacity:0.5; cursor:default; }
@@ -1009,13 +1027,16 @@ function DoctorVerification() {
           <button
             key={key}
             className={`dv-fbtn${statusFilter === key ? " dv-active" : ""}`}
-            onClick={() => setStatusFilter(key)}
+            onClick={() => {
+              setStatusFilter(key);
+              setCurrentPage(1);
+            }}
           >
             {label}
           </button>
         ))}
         <span className="dv-count">
-          {filtered.length} submission{filtered.length !== 1 ? "s" : ""}
+          {allFiltered.length} submission{allFiltered.length !== 1 ? "s" : ""}
         </span>
         <button
           className="dv-refresh"
@@ -1064,7 +1085,7 @@ function DoctorVerification() {
                   ))}
                 </tr>
               ))
-            ) : filtered.length === 0 ? (
+            ) : allFiltered.length === 0 ? (
               <tr className="empty-row">
                 <td colSpan="6">
                   {statusFilter
@@ -1268,6 +1289,64 @@ function DoctorVerification() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {!loading && totalPages > 1 && (
+        <div className="dv-pagination">
+          <span className="dv-pagination-info">
+            Showing{" "}
+            {Math.min(
+              (safeCurrentPage - 1) * itemsPerPage + 1,
+              allFiltered.length,
+            )}
+            –{Math.min(safeCurrentPage * itemsPerPage, allFiltered.length)} of{" "}
+            {allFiltered.length}
+          </span>
+          <div className="dv-pagination-btns">
+            <button
+              className="dv-pg-btn"
+              disabled={safeCurrentPage === 1}
+              onClick={() => setCurrentPage((p) => p - 1)}
+            >
+              ‹
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(
+                (p) =>
+                  p === 1 ||
+                  p === totalPages ||
+                  Math.abs(p - safeCurrentPage) <= 1,
+              )
+              .reduce((acc, p, idx, arr) => {
+                if (idx > 0 && p - arr[idx - 1] > 1) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "…" ? (
+                  <span key={`e${i}`} className="dv-pg-ellipsis">
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={p}
+                    className={`dv-pg-btn${safeCurrentPage === p ? " active" : ""}`}
+                    onClick={() => setCurrentPage(p)}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
+            <button
+              className="dv-pg-btn"
+              disabled={safeCurrentPage === totalPages}
+              onClick={() => setCurrentPage((p) => p + 1)}
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Reject Modal */}
       {rejectModal && (
