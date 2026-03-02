@@ -1,5 +1,9 @@
 ﻿import { useState, useEffect } from "react";
-import { logoutUser, getAuthToken } from "../../utils/authService";
+import {
+  logoutUser,
+  getAuthToken,
+  authenticatedFetch,
+} from "../../utils/authService";
 import {
   submitForVerification,
   getVerificationDocuments,
@@ -16,6 +20,7 @@ const navItems = [
   { id: "consultations", icon: "💬", label: "Consultations" },
   { id: "prescriptions", icon: "💊", label: "Prescriptions" },
   { id: "verification", icon: "✅", label: "Verification" },
+  { id: "profile", icon: "👤", label: "Profile" },
 ];
 
 const pageTitles = {
@@ -25,6 +30,7 @@ const pageTitles = {
   consultations: "Consultations",
   prescriptions: "Prescriptions",
   verification: "Verification Status",
+  profile: "Doctor Profile",
 };
 
 const DoctorDashboard = ({ user: initialUser, onLogout }) => {
@@ -37,6 +43,72 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [verificationStatus, setVerificationStatus] = useState(null);
   const [submittedDocs, setSubmittedDocs] = useState([]);
   const [loadingVerification, setLoadingVerification] = useState(false);
+
+  // Doctor public profile
+  const [docProfile, setDocProfile] = useState({
+    name: "",
+    specialization: "",
+    consultationFee: "",
+    bio: "",
+  });
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileSuccess, setProfileSuccess] = useState("");
+
+  // Load doctor public profile when the profile tab is opened
+  useEffect(() => {
+    if (activeTab !== "profile") return;
+    setProfileLoading(true);
+    setProfileError("");
+    setProfileSuccess("");
+    const API_BASE = import.meta.env.VITE_API_BASE_URL;
+    authenticatedFetch(`${API_BASE}/doctors/api/v1/public/profile`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          const p = data.data;
+          setDocProfile({
+            name: p.name || "",
+            specialization: p.specialization || "",
+            consultationFee:
+              p.consultation_fee != null ? String(p.consultation_fee) : "",
+            bio: p.bio || "",
+          });
+        }
+      })
+      .catch(() => setProfileError("Failed to load profile."))
+      .finally(() => setProfileLoading(false));
+  }, [activeTab]);
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileError("");
+    setProfileSuccess("");
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL;
+      const res = await authenticatedFetch(
+        `${API_BASE}/doctors/api/v1/public/profile`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            name: docProfile.name,
+            specialization: docProfile.specialization,
+            consultationFee: docProfile.consultationFee
+              ? parseFloat(docProfile.consultationFee)
+              : null,
+            bio: docProfile.bio,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (data.success) setProfileSuccess("Profile saved successfully!");
+      else setProfileError(data.message || "Failed to save profile.");
+    } catch {
+      setProfileError("Failed to save profile.");
+    }
+    setProfileSaving(false);
+  };
 
   useEffect(() => {
     const loadVerification = async () => {
@@ -990,6 +1062,297 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                         : ""}{" "}
                       ready to submit
                     </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {activeTab === "profile" && (
+              <>
+                <div className="dd-page-head">
+                  <h2>Doctor Profile</h2>
+                  <p>
+                    This information is shown to patients when they browse and
+                    book appointments.
+                  </p>
+                </div>
+                <div className="dd-section" style={{ maxWidth: 560 }}>
+                  {profileLoading ? (
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        color: "#7a8fa6",
+                        padding: "12px 0",
+                      }}
+                    >
+                      Loading profile…
+                    </div>
+                  ) : (
+                    <>
+                      {profileSuccess && (
+                        <div
+                          style={{
+                            marginBottom: 16,
+                            padding: "10px 14px",
+                            background: "#f0fdf4",
+                            border: "1px solid #86efac",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            color: "#15803d",
+                          }}
+                        >
+                          ✓ {profileSuccess}
+                        </div>
+                      )}
+                      {profileError && (
+                        <div
+                          style={{
+                            marginBottom: 16,
+                            padding: "10px 14px",
+                            background: "#fff1f1",
+                            border: "1px solid #fca5a5",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            color: "#dc2626",
+                          }}
+                        >
+                          ⚠ {profileError}
+                        </div>
+                      )}
+
+                      {/* Name */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Full Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. John Smith"
+                          value={docProfile.name}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              name: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: "#1a3a52",
+                            background: "#fff",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      {/* Specialization */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Specialization
+                        </label>
+                        <select
+                          value={docProfile.specialization}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              specialization: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: docProfile.specialization
+                              ? "#1a3a52"
+                              : "#7a8fa6",
+                            background: "#fff",
+                            boxSizing: "border-box",
+                            appearance: "auto",
+                          }}
+                        >
+                          <option value="">— Select specialization —</option>
+                          <option value="General Practice">
+                            General Practice
+                          </option>
+                          <option value="Internal Medicine">
+                            Internal Medicine
+                          </option>
+                          <option value="Cardiology">Cardiology</option>
+                          <option value="Dermatology">Dermatology</option>
+                          <option value="Endocrinology">Endocrinology</option>
+                          <option value="Gastroenterology">
+                            Gastroenterology
+                          </option>
+                          <option value="Geriatrics">Geriatrics</option>
+                          <option value="Hematology">Hematology</option>
+                          <option value="Infectious Disease">
+                            Infectious Disease
+                          </option>
+                          <option value="Nephrology">Nephrology</option>
+                          <option value="Neurology">Neurology</option>
+                          <option value="Oncology">Oncology</option>
+                          <option value="Ophthalmology">Ophthalmology</option>
+                          <option value="Orthopedics">Orthopedics</option>
+                          <option value="Otolaryngology (ENT)">
+                            Otolaryngology (ENT)
+                          </option>
+                          <option value="Pediatrics">Pediatrics</option>
+                          <option value="Psychiatry">Psychiatry</option>
+                          <option value="Pulmonology">Pulmonology</option>
+                          <option value="Radiology">Radiology</option>
+                          <option value="Rheumatology">Rheumatology</option>
+                          <option value="Surgery (General)">
+                            Surgery (General)
+                          </option>
+                          <option value="Surgery (Cardiothoracic)">
+                            Surgery (Cardiothoracic)
+                          </option>
+                          <option value="Surgery (Neurosurgery)">
+                            Surgery (Neurosurgery)
+                          </option>
+                          <option value="Surgery (Plastic)">
+                            Surgery (Plastic)
+                          </option>
+                          <option value="Surgery (Vascular)">
+                            Surgery (Vascular)
+                          </option>
+                          <option value="Urology">Urology</option>
+                          <option value="Obstetrics & Gynecology">
+                            Obstetrics &amp; Gynecology
+                          </option>
+                          <option value="Anesthesiology">Anesthesiology</option>
+                          <option value="Emergency Medicine">
+                            Emergency Medicine
+                          </option>
+                          <option value="Family Medicine">
+                            Family Medicine
+                          </option>
+                          <option value="Pathology">Pathology</option>
+                          <option value="Physical Medicine & Rehabilitation">
+                            Physical Medicine &amp; Rehabilitation
+                          </option>
+                          <option value="Sports Medicine">
+                            Sports Medicine
+                          </option>
+                        </select>
+                      </div>
+
+                      {/* Consultation fee */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Consultation Fee (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="e.g. 50.00"
+                          value={docProfile.consultationFee}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              consultationFee: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: "#1a3a52",
+                            background: "#fff",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      {/* Bio */}
+                      <div style={{ marginBottom: 20 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Short Bio
+                        </label>
+                        <textarea
+                          rows={4}
+                          placeholder="Tell patients about your experience and approach…"
+                          value={docProfile.bio}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              bio: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: "#1a3a52",
+                            background: "#fff",
+                            resize: "vertical",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <button
+                        className="dd-btn dd-btn-primary"
+                        onClick={handleSaveProfile}
+                        disabled={profileSaving}
+                      >
+                        {profileSaving ? "Saving…" : "Save Profile"}
+                      </button>
+                    </>
                   )}
                 </div>
               </>

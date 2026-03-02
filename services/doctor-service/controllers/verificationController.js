@@ -219,21 +219,12 @@ exports.approveVerification = async (req, res) => {
       });
     }
 
-    // Get all documents before approval
-    const documents = await VerificationModel.getDocumentsByDoctorId(doctorId);
-
     // Approve verification
     const approvedStatus = await VerificationModel.approveVerification(doctorId);
 
-    // Delete all documents (files from disk + database records)
-    for (const doc of documents) {
-      await deleteFile(doc.documentUrl);
-      await VerificationModel.deleteDocument(doc.id);
-    }
-
     res.status(200).json({
       success: true,
-      message: 'Doctor verification approved and documents deleted',
+      message: 'Doctor verification approved',
       data: approvedStatus
     });
   } catch (error) {
