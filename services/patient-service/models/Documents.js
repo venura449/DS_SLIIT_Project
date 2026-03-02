@@ -9,8 +9,11 @@ const Documents = sequelize.define("Documents", {
   },
   fileName: { type: DataTypes.STRING },
   fileUrl: { type: DataTypes.STRING },
-  documentType: { type: DataTypes.ENUM("Report", "Prescription", "LabResult") },
-  patientId:{type:DataTypes.UUID}
+  documentType: {
+    type: DataTypes.ENUM("Report", "Prescription", "LabResult"),
+    defaultValue: "Report",
+  },
+  patientId: { type: DataTypes.UUID,allowNull:false },
 });
 
-Patients.hasMany(Documents, {foreignKey:'patientId'});
+module.exports = Documents;

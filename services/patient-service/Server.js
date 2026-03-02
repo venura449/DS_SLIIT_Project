@@ -18,6 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 const patientRoutes = require('./routes/patientRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
+const { initializeKafka } = require('./config/kafka');
 app.use('/api/patients', patientRoutes);
 app.use('/api/v1/appointments', appointmentRoutes);
 
@@ -44,8 +45,11 @@ const server = app.listen(PORT, async () => {
     try {
         await initializeDatabase();
         console.log('Database initialized successfully');
+
+        await initializeKafka();
+        console.log('Kafka initialized successfully');
     } catch (error) {
-        console.error('Failed to initialize database:', error);
+        console.error('Failed to initialize database or Kafka:', error);
         process.exit(1);
     }
 });

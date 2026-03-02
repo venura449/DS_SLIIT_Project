@@ -7,9 +7,16 @@ const Patients = sequelize.define("Patients", {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  authId: { 
+        type: DataTypes.STRING, 
+        unique: true, 
+        allowNull: false
+    },
   fullName: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, unique: true, validate: { isEmail: true } },
   phoneNumber: { type: DataTypes.STRING },
+  dateOfBirth: { type: DataTypes.DATEONLY },
   medicalHistory: { type: DataTypes.TEXT },
-  profilePictureUrl: { type: DataTypes.STRING },
 });
+
+module.exports = Patients;

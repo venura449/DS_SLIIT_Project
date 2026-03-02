@@ -1,31 +1,39 @@
-const {Patients, Documents} = require("../models");
-const kafka = require('../config/kafka');
-const fs = requrie('fs');
-const path = require('path');
+const { Patients, Documents } = require("../models");
 
-const producer = kafka.producer();
+exports.getOrCreatePatient = async (authData) => {
+  let patient = await Patients.findOne({ where: { authId: authData.authId } });
 
-exports.registerPatient = async(PatientData)=>{
-    const patient = await Patients.create(PatientData);
-
-    await producer.connect();
-    await producer.send({
-        topic:'patient-registered',
-        messages:[{
-            value:JSON.stringify({id:patient.id,email:patient.email}),
-        }]
+  if (!patient) {
+    patient = await Patients.create({
+      authId: authData.authId,
+      email: authData.email,
+      fullName: "New Patient",
     });
-    return patient;
+  }
+  return patient;
 };
 
+exports.updateProfile = async (authId, updateData) => {
+  const patient = await Patients.findOne({ where: { authId } });
+  if (!patient) {
+    throw new Error("Patient not found");
+  }
+  return await patient.update(updateData);
+};
 
-exports.uploadDocument = async(patientId, file)=>{
-    
-    const document = await Documents.create({
-        patientId,
-        fileName: file.originalname,
-        fileUrl: `/uploads/${file.filename}`,
-        documentType:'Report'
-    });
-    return document;
-}
+exports.uploadDocument = async (patientId, file) => {
+  const document = await Documents.create({
+    patientId,
+    fileName: file.originalname,
+    fileUrl: `/uploads/${file.filename}`,
+    documentType: "Report",
+  });
+  return document;
+};
+
+exports.getPatientHistory = async (patientId) => {
+  return await Documents.findAll({
+    where: { patientId },
+    order: [["createdAt", "DESC"]],
+  });
+};

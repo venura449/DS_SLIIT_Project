@@ -1,11 +1,17 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const patientController = require('../controllers/patientController');
+const {
+  getProfile,
+  uploadDocument,
+  getMyDocuments,
+  updateProfile,
+} = require("../controllers/patientController");
+const { protect } = require("../middlewares/authMiddleware");
+const upload = require("../middlewares/multerConfig");
 
-router.get('/', patientController.getPatients);
-router.get('/:id', patientController.getPatientById);
-router.post('/', patientController.createPatient);
-router.put('/:id', patientController.updatePatient);
-router.delete('/:id', patientController.deletePatient);
+router.get("/profile", protect, getProfile);
+router.post("/documents", protect, upload.single("file"), uploadDocument);
+router.get("/documents", protect, getMyDocuments);
+router.put("/profile", protect, updateProfile);
 
 module.exports = router;
