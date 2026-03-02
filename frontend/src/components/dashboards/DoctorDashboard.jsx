@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import {
   logoutUser,
   getAuthToken,
@@ -9,12 +9,14 @@ import {
   getVerificationDocuments,
   getVerificationStatus,
 } from "../../utils/verificationService";
+import * as appointmentService from "../../utils/appointmentService";
 import UpdateProfileForm from "../UpdateProfileForm";
 import PDFUploader from "../PDFUploader";
 import ScheduleManager from "../ScheduleManager";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
+  { id: "appointments", icon: "📆", label: "Appointments" },
   { id: "schedule", icon: "📅", label: "Schedule" },
   { id: "patients", icon: "👥", label: "Patients" },
   { id: "consultations", icon: "💬", label: "Consultations" },
@@ -25,6 +27,7 @@ const navItems = [
 
 const pageTitles = {
   overview: "Overview",
+  appointments: "My Appointments",
   schedule: "Schedule",
   patients: "Patients",
   consultations: "Consultations",
@@ -55,6 +58,18 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
+
+  // Appointments tab
+  const [apptFilter, setApptFilter] = useState("upcoming");
+  const [appointments, setAppointments] = useState([]);
+  const [apptLoading, setApptLoading] = useState(false);
+  const [apptError, setApptError] = useState("");
+  const [chatApptId, setChatApptId] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [approvingId, setApprovingId] = useState(null);
+  const chatEndRef = useRef(null);
 
   // Load doctor public profile when the profile tab is opened
   useEffect(() => {
@@ -123,6 +138,61 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
     };
     loadVerification();
   }, []);
+
+  // Load appointments when tab or filter changes
+  useEffect(() => {
+    if (activeTab !== "appointments") return;
+    setApptLoading(true);
+    setApptError("");
+    appointmentService.getDoctorAppointments(apptFilter).then((res) => {
+      if (res.success) setAppointments(res.data || []);
+      else setApptError(res.error || "Failed to load appointments");
+      setApptLoading(false);
+    });
+  }, [activeTab, apptFilter]);
+
+  // Scroll chat to bottom when messages change
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const handleApprove = async (apptId) => {
+    setApprovingId(apptId);
+    const res = await appointmentService.approveAppointment(apptId);
+    if (res.success) {
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === apptId ? { ...a, status: "confirmed" } : a)),
+      );
+    }
+    setApprovingId(null);
+  };
+
+  const openChat = async (apptId) => {
+    setChatApptId(apptId);
+    setChatMessages([]);
+    const res = await appointmentService.getMessages(apptId);
+    if (res.success) setChatMessages(res.data || []);
+  };
+
+  const closeChat = () => {
+    setChatApptId(null);
+    setChatMessages([]);
+    setChatInput("");
+  };
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || !chatApptId) return;
+    setChatSending(true);
+    const res = await appointmentService.sendMessage(
+      chatApptId,
+      chatInput.trim(),
+    );
+    if (res.success) {
+      setChatMessages((prev) => [...prev, res.data]);
+      setChatInput("");
+    }
+    setChatSending(false);
+  };
 
   const handleLogout = () => {
     logoutUser();
@@ -1064,6 +1134,234 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                     </div>
                   )}
                 </div>
+              </>
+            )}
+
+            {/* ══════════ APPOINTMENTS TAB ══════════════════════════════ */}
+            {activeTab === "appointments" && (
+              <>
+                <style>{`
+                  .da-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
+                  .da-fbtn { padding:6px 16px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; }
+                  .da-fbtn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
+                  .da-card { background:#fff; border:1.5px solid #e4eaf0; border-radius:12px; margin-bottom:12px; overflow:hidden; }
+                  .da-card-header { display:flex; align-items:center; gap:14px; padding:14px 18px; cursor:pointer; }
+                  .da-avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#1a6fa0,#3b9ed9); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; flex-shrink:0; }
+                  .da-card-info { flex:1; min-width:0; }
+                  .da-patient-name { font-size:15px; font-weight:700; color:#1a3a52; }
+                  .da-appt-time { font-size:12px; color:#7a8fa6; margin-top:2px; }
+                  .da-reason { font-size:12px; color:#5a7a95; margin-top:3px; font-style:italic; }
+                  .da-badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:10px; white-space:nowrap; }
+                  .da-badge.pending { background:#fef9c3; color:#a16207; border:1px solid #fde047; }
+                  .da-badge.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+                  .da-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
+                  .da-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; }
+                  .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-approve-btn:disabled { opacity:.5; cursor:default; }
+                  .da-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-chat-panel { border-top:1.5px solid #e4eaf0; background:#f8fafc; }
+                  .da-chat-messages { max-height:240px; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:8px; }
+                  .da-msg { max-width:72%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.45; }
+                  .da-msg.doctor { align-self:flex-end; background:#1a6fa0; color:#fff; border-bottom-right-radius:4px; }
+                  .da-msg.patient { align-self:flex-start; background:#fff; color:#1a3a52; border:1px solid #e4eaf0; border-bottom-left-radius:4px; }
+                  .da-msg-meta { font-size:10px; margin-top:3px; opacity:.7; }
+                  .da-chat-input { display:flex; gap:8px; padding:10px 14px; border-top:1px solid #e4eaf0; }
+                  .da-chat-input textarea { flex:1; border:1.5px solid #e4eaf0; border-radius:8px; padding:8px 10px; font-size:13px; font-family:'DM Sans',sans-serif; resize:none; outline:none; background:#fff; color:#1a3a52; color-scheme:light; }
+                  .da-send-btn { padding:8px 18px; border-radius:8px; border:none; background:#1a6fa0; color:#fff; font-size:13px; font-weight:700; cursor:pointer; }
+                  .da-send-btn:disabled { opacity:.5; cursor:default; }
+                  .da-empty { text-align:center; padding:40px; color:#7a8fa6; font-size:14px; }
+                  .da-section-label { font-size:11px; font-weight:700; color:#7a8fa6; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 12px; }
+                `}</style>
+                <div className="dd-page-head">
+                  <h2>My Appointments</h2>
+                  <p>
+                    Review, approve, and chat with patients about their
+                    bookings.
+                  </p>
+                </div>
+
+                {/* Filter tabs */}
+                <div className="da-toolbar">
+                  {[
+                    { key: "today", label: "Today" },
+                    { key: "upcoming", label: "Upcoming" },
+                    { key: "", label: "All" },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      className={`da-fbtn${apptFilter === key ? " active" : ""}`}
+                      onClick={() => setApptFilter(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "#7a8fa6",
+                      marginLeft: "auto",
+                    }}
+                  >
+                    {appointments.length} appointment
+                    {appointments.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+
+                {apptLoading ? (
+                  <div className="da-empty">Loading…</div>
+                ) : apptError ? (
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      background: "#fee2e2",
+                      color: "#991b1b",
+                      borderRadius: 8,
+                      marginBottom: 12,
+                    }}
+                  >
+                    {apptError}
+                  </div>
+                ) : appointments.length === 0 ? (
+                  <div className="da-empty">No appointments found.</div>
+                ) : (
+                  appointments.map((appt) => {
+                    const initials = appt.patient_name
+                      ? appt.patient_name
+                          .split(" ")
+                          .map((w) => w[0])
+                          .join("")
+                          .toUpperCase()
+                          .slice(0, 2)
+                      : "P";
+                    const dateStr = new Date(
+                      appt.appointment_date,
+                    ).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    });
+                    const fmt12 = (t) => {
+                      if (!t) return "";
+                      const [h, m] = t.split(":").map(Number);
+                      const ampm = h < 12 ? "AM" : "PM";
+                      return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+                    };
+                    const isChatOpen = chatApptId === appt.id;
+                    return (
+                      <div className="da-card" key={appt.id}>
+                        <div
+                          className="da-card-header"
+                          onClick={() =>
+                            isChatOpen ? closeChat() : openChat(appt.id)
+                          }
+                        >
+                          <div className="da-avatar">{initials}</div>
+                          <div className="da-card-info">
+                            <div className="da-patient-name">
+                              {appt.patient_name || "Patient"}
+                            </div>
+                            <div className="da-appt-time">
+                              {dateStr} &nbsp;·&nbsp; {fmt12(appt.start_time)} –{" "}
+                              {fmt12(appt.end_time)}
+                            </div>
+                            {appt.reason && (
+                              <div className="da-reason">"{appt.reason}"</div>
+                            )}
+                          </div>
+                          <div
+                            className="da-actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span className={`da-badge ${appt.status}`}>
+                              {appt.status === "pending"
+                                ? "⏳ Pending"
+                                : appt.status === "confirmed"
+                                  ? "✅ Confirmed"
+                                  : "✔ Completed"}
+                            </span>
+                            {appt.status === "pending" && (
+                              <button
+                                className="da-approve-btn"
+                                disabled={approvingId === appt.id}
+                                onClick={() => handleApprove(appt.id)}
+                              >
+                                {approvingId === appt.id ? "…" : "Approve"}
+                              </button>
+                            )}
+                            <button
+                              className="da-chat-btn"
+                              onClick={() =>
+                                isChatOpen ? closeChat() : openChat(appt.id)
+                              }
+                            >
+                              {isChatOpen ? "Close" : "💬 Chat"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Inline chat panel */}
+                        {isChatOpen && (
+                          <div className="da-chat-panel">
+                            <div className="da-chat-messages">
+                              {chatMessages.length === 0 && (
+                                <div
+                                  style={{
+                                    textAlign: "center",
+                                    color: "#7a8fa6",
+                                    fontSize: 13,
+                                    padding: "12px 0",
+                                  }}
+                                >
+                                  No messages yet. Start the conversation.
+                                </div>
+                              )}
+                              {chatMessages.map((msg) => (
+                                <div
+                                  key={msg.id}
+                                  className={`da-msg ${msg.sender_role}`}
+                                >
+                                  {msg.message}
+                                  <div className="da-msg-meta">
+                                    {msg.sender_role === "doctor"
+                                      ? "You"
+                                      : appt.patient_name || "Patient"}
+                                    &nbsp;·&nbsp;
+                                    {new Date(msg.sent_at).toLocaleTimeString(
+                                      "en-US",
+                                      { hour: "2-digit", minute: "2-digit" },
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                              <div ref={chatEndRef} />
+                            </div>
+                            <div className="da-chat-input">
+                              <textarea
+                                rows={2}
+                                placeholder="Type a message…"
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSendMessage();
+                                  }
+                                }}
+                              />
+                              <button
+                                className="da-send-btn"
+                                disabled={chatSending || !chatInput.trim()}
+                                onClick={handleSendMessage}
+                              >
+                                Send
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </>
             )}
 

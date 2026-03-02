@@ -99,7 +99,7 @@ exports.getDoctorAvailableSlots = async (req, res) => {
 exports.createBooking = async (req, res) => {
     try {
         const patientId = req.user.userId;
-        const { doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName } = req.body;
+        const { doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName } = req.body;
 
         if (!doctorId || !appointmentDate || !startTime || !endTime) {
             return res.status(400).json({
@@ -127,10 +127,10 @@ exports.createBooking = async (req, res) => {
 
         const result = await db.query(
             `INSERT INTO appointments
-                (patient_id, doctor_id, slot_id, appointment_date, start_time, end_time, reason, doctor_name, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'confirmed')
+                (patient_id, doctor_id, slot_id, appointment_date, start_time, end_time, reason, doctor_name, patient_name, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
              RETURNING *`,
-            [patientId, doctorId, slotId || null, appointmentDate, startTime, endTime, reason || null, doctorName || null]
+            [patientId, doctorId, slotId || null, appointmentDate, startTime, endTime, reason || null, doctorName || null, patientName || null]
         );
 
         res.status(201).json({ success: true, data: result.rows[0] });
@@ -181,7 +181,7 @@ exports.cancelBooking = async (req, res) => {
         const result = await db.query(
             `UPDATE appointments
              SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1 AND patient_id = $2 AND status = 'confirmed'
+             WHERE id = $1 AND patient_id = $2 AND status IN ('pending','confirmed')
              RETURNING *`,
             [id, patientId]
         );
@@ -194,6 +194,131 @@ exports.cancelBooking = async (req, res) => {
         }
 
         res.status(200).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/* ── GET /api/v1/appointments/doctor ───────────────────────────── */
+// Doctor sees their own appointments (today / upcoming / all)
+exports.getDoctorAppointments = async (req, res) => {
+    try {
+        const doctorId = req.user.userId;
+        const { filter } = req.query; // 'today' | 'upcoming' | omit for all
+        const today = new Date().toISOString().split('T')[0];
+
+        let whereExtra = '';
+        if (filter === 'today') {
+            whereExtra = ` AND appointment_date = '${today}'`;
+        } else if (filter === 'upcoming') {
+            whereExtra = ` AND appointment_date >= '${today}'`;
+        }
+
+        const result = await db.query(
+            `SELECT * FROM appointments
+             WHERE doctor_id = $1 AND status != 'cancelled'${whereExtra}
+             ORDER BY appointment_date ASC, start_time ASC`,
+            [doctorId]
+        );
+
+        res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/* ── PUT /api/v1/appointments/:id/approve ──────────────────────── */
+// Doctor approves a pending appointment → confirmed
+exports.approveAppointment = async (req, res) => {
+    try {
+        const doctorId = req.user.userId;
+        const { id } = req.params;
+
+        const result = await db.query(
+            `UPDATE appointments
+             SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND doctor_id = $2 AND status = 'pending'
+             RETURNING *`,
+            [id, doctorId]
+        );
+
+        if (!result.rows[0]) {
+            return res.status(404).json({
+                success: false,
+                message: 'Appointment not found or not in pending state',
+            });
+        }
+
+        res.status(200).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/* ── POST /api/v1/appointments/:id/messages ────────────────────── */
+exports.sendMessage = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { message } = req.body;
+        const senderId = req.user.userId;
+
+        if (!message || !message.trim()) {
+            return res.status(400).json({ success: false, message: 'Message cannot be empty' });
+        }
+
+        // Verify the requester is part of this appointment
+        const appt = await db.query(
+            'SELECT patient_id, doctor_id FROM appointments WHERE id = $1',
+            [id]
+        );
+        if (!appt.rows[0]) {
+            return res.status(404).json({ success: false, message: 'Appointment not found' });
+        }
+
+        const { patient_id, doctor_id } = appt.rows[0];
+        if (senderId !== patient_id && senderId !== doctor_id) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+
+        const senderRole = senderId === doctor_id ? 'doctor' : 'patient';
+
+        const result = await db.query(
+            `INSERT INTO appointment_messages (appointment_id, sender_id, sender_role, message)
+             VALUES ($1, $2, $3, $4) RETURNING *`,
+            [id, senderId, senderRole, message.trim()]
+        );
+
+        res.status(201).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/* ── GET /api/v1/appointments/:id/messages ─────────────────────── */
+exports.getMessages = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.userId;
+
+        const appt = await db.query(
+            'SELECT patient_id, doctor_id FROM appointments WHERE id = $1',
+            [id]
+        );
+        if (!appt.rows[0]) {
+            return res.status(404).json({ success: false, message: 'Appointment not found' });
+        }
+
+        const { patient_id, doctor_id } = appt.rows[0];
+        if (userId !== patient_id && userId !== doctor_id) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+
+        const result = await db.query(
+            `SELECT * FROM appointment_messages WHERE appointment_id = $1 ORDER BY sent_at ASC`,
+            [id]
+        );
+
+        res.status(200).json({ success: true, data: result.rows });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

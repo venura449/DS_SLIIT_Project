@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import * as appointmentService from "../utils/appointmentService";
+import { getUserData } from "../utils/authService";
 
 /* ── constants ─────────────────────────────────────────────────── */
 
@@ -85,6 +86,13 @@ const BookAppointment = () => {
   const [bookingsError, setBookingsError] = useState("");
   const [cancellingId, setCancellingId] = useState(null);
 
+  // Chat per appointment
+  const [chatApptId, setChatApptId] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const chatEndRef = useRef(null);
+
   /* ── load doctors ────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -149,6 +157,7 @@ const BookAppointment = () => {
       endTime: bookingSlot.end_time.substring(0, 5),
       reason: bookingReason,
       doctorName: selectedDoctor.name,
+      patientName: getUserData()?.name || "",
     });
     if (res.success) {
       setBookingSuccess({
@@ -163,6 +172,39 @@ const BookAppointment = () => {
       setBookingError(res.error);
     }
     setBookingLoading(false);
+  };
+
+  /* ── chat ──────────────────────────────────────────────────── */
+
+  const openChat = async (apptId) => {
+    setChatApptId(apptId);
+    setChatMessages([]);
+    const res = await appointmentService.getMessages(apptId);
+    if (res.success) setChatMessages(res.data || []);
+  };
+
+  const closeChat = () => {
+    setChatApptId(null);
+    setChatMessages([]);
+    setChatInput("");
+  };
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || !chatApptId) return;
+    setChatSending(true);
+    const res = await appointmentService.sendMessage(
+      chatApptId,
+      chatInput.trim(),
+    );
+    if (res.success) {
+      setChatMessages((prev) => [...prev, res.data]);
+      setChatInput("");
+    }
+    setChatSending(false);
   };
 
   /* ── cancel booking ─────────────────────────────────────────── */
@@ -260,6 +302,8 @@ const BookAppointment = () => {
         .ba-slot.available { border-color:#86efac; background:#f0fdf4; color:#15803d; }
         .ba-slot.available:hover { background:#dcfce7; border-color:#4ade80; box-shadow:0 2px 8px rgba(21,128,61,.15); }
         .ba-slot.booked { border-color:#e4eaf0; background:#f8fafc; color:#b0bec8; cursor:not-allowed; }
+        .ba-slot.past { border-color:#e4eaf0; background:#f1f5f9; color:#b0bec8; cursor:not-allowed; opacity:.6; }
+        .ba-slot.past .ba-slot-badge { color:#94a3b8; }
         .ba-slot-time { display:block; }
         .ba-slot-badge { font-size:10px; font-weight:700; margin-top:2px; display:block; }
         .ba-slot.available .ba-slot-badge { color:#15803d; }
@@ -295,6 +339,7 @@ const BookAppointment = () => {
         .ba-booking-meta { font-size:12.5px; color:#7a8fa6; margin-bottom:6px; }
         .ba-booking-reason { font-size:12px; color:#3a5068; background:#f8fafc; border-radius:6px; padding:5px 8px; display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .ba-status-badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:10px; }
+        .ba-status-badge.pending { background:#fef9c3; color:#a16207; border:1px solid #fde047; }
         .ba-status-badge.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
         .ba-status-badge.cancelled { background:#f3f4f6; color:#9ca3af; border:1px solid #e5e7eb; }
         .ba-status-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
@@ -303,6 +348,20 @@ const BookAppointment = () => {
         .ba-cancel-btn:disabled { opacity:.5; cursor:default; }
         .ba-bookings-empty { text-align:center; padding:36px; color:#b0bec8; }
         .ba-bookings-empty-icon { font-size:36px; margin-bottom:8px; opacity:.5; }
+
+        /* ── chat panel ── */
+        .ba-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; font-family:'DM Sans',sans-serif; }
+        .ba-chat-btn:hover { background:#eff6ff; }
+        .ba-chat-panel { border-top:1.5px solid #e4eaf0; background:#f8fafc; border-radius:0 0 12px 12px; }
+        .ba-chat-messages { max-height:220px; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:8px; }
+        .ba-msg { max-width:72%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.45; }
+        .ba-msg.patient { align-self:flex-end; background:#1a6fa0; color:#fff; border-bottom-right-radius:4px; }
+        .ba-msg.doctor { align-self:flex-start; background:#fff; color:#1a3a52; border:1px solid #e4eaf0; border-bottom-left-radius:4px; }
+        .ba-msg-meta { font-size:10px; margin-top:3px; opacity:.7; }
+        .ba-chat-input-row { display:flex; gap:8px; padding:10px 14px; border-top:1px solid #e4eaf0; }
+        .ba-chat-input-row textarea { flex:1; border:1.5px solid #e4eaf0; border-radius:8px; padding:8px 10px; font-size:13px; font-family:'DM Sans',sans-serif; resize:none; outline:none; background:#fff; color:#1a3a52; color-scheme:light; }
+        .ba-chat-send-btn { padding:8px 18px; border-radius:8px; border:none; background:#1a6fa0; color:#fff; font-size:13px; font-weight:700; cursor:pointer; font-family:'DM Sans',sans-serif; }
+        .ba-chat-send-btn:disabled { opacity:.5; cursor:default; }
       `}</style>
 
       {/* ── View toggler ── */}
@@ -439,6 +498,12 @@ const BookAppointment = () => {
                             return toDateStr(d);
                           })();
 
+                    // Disable today and all past dates — only tomorrow onwards
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const dayDate = new Date(slotDate + "T00:00:00");
+                    const isPast = dayDate <= today;
+
                     return (
                       <div key={day.value} className="ba-day-card">
                         <div className="ba-day-head">
@@ -447,8 +512,9 @@ const BookAppointment = () => {
                             {fmtDate(slotDate)}
                           </span>
                           <span className="ba-day-count">
-                            {daySlots.filter((s) => !s.isBooked).length}{" "}
-                            available
+                            {isPast
+                              ? "Unavailable"
+                              : `${daySlots.filter((s) => !s.isBooked).length} available`}
                           </span>
                         </div>
 
@@ -456,28 +522,35 @@ const BookAppointment = () => {
                           <div className="ba-no-slots">No slots scheduled.</div>
                         ) : (
                           <div className="ba-slots">
-                            {daySlots.map((slot) => (
-                              <button
-                                key={slot.id}
-                                className={`ba-slot ${slot.isBooked ? "booked" : "available"}`}
-                                onClick={() => {
-                                  if (!slot.isBooked) {
-                                    setBookingSlot(slot);
-                                    setBookingReason("");
-                                    setBookingError("");
-                                  }
-                                }}
-                                disabled={slot.isBooked}
-                              >
-                                <span className="ba-slot-time">
-                                  {fmt12(slot.start_time)} –{" "}
-                                  {fmt12(slot.end_time)}
-                                </span>
-                                <span className="ba-slot-badge">
-                                  {slot.isBooked ? "Booked" : "Available"}
-                                </span>
-                              </button>
-                            ))}
+                            {daySlots.map((slot) => {
+                              const isDisabled = slot.isBooked || isPast;
+                              return (
+                                <button
+                                  key={slot.id}
+                                  className={`ba-slot ${isPast ? "past" : slot.isBooked ? "booked" : "available"}`}
+                                  onClick={() => {
+                                    if (!isDisabled) {
+                                      setBookingSlot(slot);
+                                      setBookingReason("");
+                                      setBookingError("");
+                                    }
+                                  }}
+                                  disabled={isDisabled}
+                                >
+                                  <span className="ba-slot-time">
+                                    {fmt12(slot.start_time)} –{" "}
+                                    {fmt12(slot.end_time)}
+                                  </span>
+                                  <span className="ba-slot-badge">
+                                    {isPast
+                                      ? "Past"
+                                      : slot.isBooked
+                                        ? "Booked"
+                                        : "Available"}
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -506,51 +579,135 @@ const BookAppointment = () => {
           ) : (
             <div className="ba-bookings-list">
               {myBookings.map((b) => (
-                <div
-                  key={b.id}
-                  className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}`}
-                >
+                <React.Fragment key={b.id}>
                   <div
-                    className={`ba-booking-icon${b.status === "cancelled" ? " cancelled" : ""}`}
+                    className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}`}
                   >
-                    {b.status === "confirmed"
-                      ? "📅"
-                      : b.status === "completed"
-                        ? "✅"
-                        : "❌"}
-                  </div>
-                  <div className="ba-booking-body">
-                    <div className="ba-booking-doctor">
-                      Dr. {b.doctor_name || "Doctor"}
-                      <span
-                        className={`ba-status-badge ${b.status}`}
-                        style={{ marginLeft: 8 }}
+                    <div
+                      className={`ba-booking-icon${b.status === "cancelled" ? " cancelled" : ""}`}
+                    >
+                      {b.status === "confirmed"
+                        ? "📅"
+                        : b.status === "completed"
+                          ? "✅"
+                          : "❌"}
+                    </div>
+                    <div className="ba-booking-body">
+                      <div className="ba-booking-doctor">
+                        Dr. {b.doctor_name || "Doctor"}
+                        <span
+                          className={`ba-status-badge ${b.status}`}
+                          style={{ marginLeft: 8 }}
+                        >
+                          {b.status === "pending"
+                            ? "⏳ Awaiting Approval"
+                            : b.status === "confirmed"
+                              ? "✅ Confirmed"
+                              : b.status === "cancelled"
+                                ? "❌ Cancelled"
+                                : b.status === "completed"
+                                  ? "✔ Completed"
+                                  : b.status.charAt(0).toUpperCase() +
+                                    b.status.slice(1)}
+                        </span>
+                      </div>
+                      <div className="ba-booking-meta">
+                        {fmtDate(
+                          b.appointment_date?.split("T")[0] ||
+                            b.appointment_date,
+                        )}{" "}
+                        &nbsp;·&nbsp; {fmt12(b.start_time)} –{" "}
+                        {fmt12(b.end_time)}
+                      </div>
+                      {b.reason && (
+                        <span className="ba-booking-reason" title={b.reason}>
+                          {b.reason}
+                        </span>
+                      )}
+                    </div>
+                    {b.status === "confirmed" && (
+                      <button
+                        className="ba-cancel-btn"
+                        onClick={() => handleCancel(b.id)}
+                        disabled={cancellingId === b.id}
                       >
-                        {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
-                      </span>
-                    </div>
-                    <div className="ba-booking-meta">
-                      {fmtDate(
-                        b.appointment_date?.split("T")[0] || b.appointment_date,
-                      )}{" "}
-                      &nbsp;·&nbsp; {fmt12(b.start_time)} – {fmt12(b.end_time)}
-                    </div>
-                    {b.reason && (
-                      <span className="ba-booking-reason" title={b.reason}>
-                        {b.reason}
-                      </span>
+                        {cancellingId === b.id ? "…" : "Cancel"}
+                      </button>
+                    )}
+                    {(b.status === "confirmed" ||
+                      b.status === "pending" ||
+                      b.status === "completed") && (
+                      <button
+                        className="ba-chat-btn"
+                        onClick={() =>
+                          chatApptId === b.id ? closeChat() : openChat(b.id)
+                        }
+                      >
+                        {chatApptId === b.id ? "Close" : "💬 Chat"}
+                      </button>
                     )}
                   </div>
-                  {b.status === "confirmed" && (
-                    <button
-                      className="ba-cancel-btn"
-                      onClick={() => handleCancel(b.id)}
-                      disabled={cancellingId === b.id}
-                    >
-                      {cancellingId === b.id ? "…" : "Cancel"}
-                    </button>
+
+                  {/* Inline chat panel — sibling of the card row */}
+                  {chatApptId === b.id && (
+                    <div className="ba-chat-panel">
+                      <div className="ba-chat-messages">
+                        {chatMessages.length === 0 && (
+                          <div
+                            style={{
+                              textAlign: "center",
+                              color: "#7a8fa6",
+                              fontSize: 13,
+                              padding: "12px 0",
+                            }}
+                          >
+                            No messages yet. Send a message to your doctor.
+                          </div>
+                        )}
+                        {chatMessages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`ba-msg ${msg.sender_role}`}
+                          >
+                            {msg.message}
+                            <div className="ba-msg-meta">
+                              {msg.sender_role === "patient"
+                                ? "You"
+                                : `Dr. ${b.doctor_name || "Doctor"}`}
+                              &nbsp;·&nbsp;
+                              {new Date(msg.sent_at).toLocaleTimeString(
+                                "en-US",
+                                { hour: "2-digit", minute: "2-digit" },
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        <div ref={chatEndRef} />
+                      </div>
+                      <div className="ba-chat-input-row">
+                        <textarea
+                          rows={2}
+                          placeholder="Type a message…"
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
+                        />
+                        <button
+                          className="ba-chat-send-btn"
+                          disabled={chatSending || !chatInput.trim()}
+                          onClick={handleSendMessage}
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
                   )}
-                </div>
+                </React.Fragment>
               ))}
             </div>
           )}
