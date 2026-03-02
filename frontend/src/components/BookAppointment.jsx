@@ -580,7 +580,8 @@ const BookAppointment = () => {
               </div>
               {selectedDoctor.consultation_fee && (
                 <div className="ba-booking-info-row">
-                  <span className="ba-booking-info-label">Fee</span>Rs. {parseFloat(selectedDoctor.consultation_fee).toFixed(2)}
+                  <span className="ba-booking-info-label">Fee</span>Rs.{" "}
+                  {parseFloat(selectedDoctor.consultation_fee).toFixed(2)}
                 </div>
               )}
             </div>
