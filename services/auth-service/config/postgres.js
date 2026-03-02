@@ -21,20 +21,25 @@ const initializeDatabase = async () => {
     try {
         // Create users table if it doesn't exist
         const createTableQuery = `
-            CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                name VARCHAR(255) NOT NULL,
-                phone VARCHAR(20),
-                user_type VARCHAR(50) DEFAULT 'patient',
-                is_active BOOLEAN DEFAULT true,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-        `;
+    CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        phone VARCHAR(20),
+        user_type VARCHAR(50) DEFAULT 'patient',
+        gender VARCHAR(20),
+        weight NUMERIC(5,2),
+        emergency_contact VARCHAR(20),
+        address TEXT,
+        birthdate DATE,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+`;
 
         await pool.query(createTableQuery);
         console.log('Database tables initialized successfully');
