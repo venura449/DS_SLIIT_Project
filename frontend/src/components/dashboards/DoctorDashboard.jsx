@@ -10,6 +10,10 @@ import {
   getVerificationStatus,
 } from "../../utils/verificationService";
 import * as appointmentService from "../../utils/appointmentService";
+import {
+  getPatientMedicalRecords,
+  getFileUrl,
+} from "../../utils/medicalRecordService";
 import UpdateProfileForm from "../UpdateProfileForm";
 import PDFUploader from "../PDFUploader";
 import ScheduleManager from "../ScheduleManager";
@@ -70,6 +74,12 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [chatSending, setChatSending] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
   const chatEndRef = useRef(null);
+
+  // Patient medical records panel (per appointment)
+  const [recordsApptId, setRecordsApptId] = useState(null);
+  const [patientRecords, setPatientRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsPatientId, setRecordsPatientId] = useState(null);
 
   // Load doctor public profile when the profile tab is opened
   useEffect(() => {
@@ -168,6 +178,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   };
 
   const openChat = async (apptId) => {
+    // Close records panel if open for a different appointment
+    if (recordsApptId && recordsApptId !== apptId) closeRecords();
     setChatApptId(apptId);
     setChatMessages([]);
     const res = await appointmentService.getMessages(apptId);
@@ -178,6 +190,28 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
     setChatApptId(null);
     setChatMessages([]);
     setChatInput("");
+  };
+
+  const openRecords = async (apptId, patientId) => {
+    // Close chat if open for a different appointment
+    if (chatApptId && chatApptId !== apptId) closeChat();
+    if (recordsApptId === apptId) {
+      closeRecords();
+      return;
+    }
+    setRecordsApptId(apptId);
+    setRecordsPatientId(patientId);
+    setRecordsLoading(true);
+    setPatientRecords([]);
+    const res = await getPatientMedicalRecords(patientId);
+    if (res.success) setPatientRecords(res.data || []);
+    setRecordsLoading(false);
+  };
+
+  const closeRecords = () => {
+    setRecordsApptId(null);
+    setPatientRecords([]);
+    setRecordsPatientId(null);
   };
 
   const handleSendMessage = async () => {
@@ -1171,6 +1205,21 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-send-btn:disabled { opacity:.5; cursor:default; }
                   .da-empty { text-align:center; padding:40px; color:#7a8fa6; font-size:14px; }
                   .da-section-label { font-size:11px; font-weight:700; color:#7a8fa6; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 12px; }
+                  .da-records-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #7c3aed; background:#fff; color:#7c3aed; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-records-panel { border-top:1.5px solid #e4eaf0; background:#faf5ff; padding:16px 18px; }
+                  .da-records-panel-title { font-family:'Sora',sans-serif; font-size:13px; font-weight:700; color:#4c1d95; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
+                  .da-rec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+                  .da-rec-card { background:#fff; border:1.5px solid #e9d5ff; border-radius:10px; overflow:hidden; }
+                  .da-rec-banner { height:4px; }
+                  .da-rec-body { padding:10px 12px 8px; }
+                  .da-rec-cat { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; border:1px solid; font-size:10px; font-weight:700; margin-bottom:6px; }
+                  .da-rec-title { font-size:13px; font-weight:700; color:#1a3a52; margin-bottom:4px; line-height:1.3; }
+                  .da-rec-desc { font-size:11.5px; color:#56687a; margin-bottom:5px; line-height:1.4; }
+                  .da-rec-meta { font-size:11px; color:#94a3b8; }
+                  .da-rec-footer { padding:8px 12px; border-top:1px solid #f1f5f9; }
+                  .da-rec-view { display:flex; align-items:center; justify-content:center; gap:4px; padding:5px 0; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-size:11.5px; font-weight:700; text-decoration:none; transition:all .15s; }
+                  .da-rec-view:hover { background:#dbeafe; }
+                  .da-rec-empty { text-align:center; padding:20px; color:#7a8fa6; font-size:13px; }
                 `}</style>
                 <div className="dd-page-head">
                   <h2>My Appointments</h2>
@@ -1289,6 +1338,16 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                               </button>
                             )}
                             <button
+                              className="da-records-btn"
+                              onClick={() =>
+                                openRecords(appt.id, appt.patient_id)
+                              }
+                            >
+                              {recordsApptId === appt.id
+                                ? "🗂 Close"
+                                : "🗂 Records"}
+                            </button>
+                            <button
                               className="da-chat-btn"
                               onClick={() =>
                                 isChatOpen ? closeChat() : openChat(appt.id)
@@ -1356,6 +1415,127 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                 Send
                               </button>
                             </div>
+                          </div>
+                        )}
+                        {recordsApptId === appt.id && (
+                          <div className="da-records-panel">
+                            <div className="da-records-panel-title">
+                              🗂 {appt.patient_name || "Patient"}&apos;s Medical
+                              Records
+                            </div>
+                            {recordsLoading ? (
+                              <div className="da-rec-empty">
+                                Loading records…
+                              </div>
+                            ) : patientRecords.length === 0 ? (
+                              <div className="da-rec-empty">
+                                No medical records uploaded by this patient yet.
+                              </div>
+                            ) : (
+                              <div className="da-rec-grid">
+                                {patientRecords.map((rec) => {
+                                  const CATEGORIES = [
+                                    {
+                                      value: "lab_report",
+                                      label: "Lab Report",
+                                      icon: "🧪",
+                                      color: "#eff6ff",
+                                      text: "#1d4ed8",
+                                      border: "#93c5fd",
+                                    },
+                                    {
+                                      value: "imaging",
+                                      label: "Imaging / Scan",
+                                      icon: "🩻",
+                                      color: "#faf5ff",
+                                      text: "#7c3aed",
+                                      border: "#c4b5fd",
+                                    },
+                                    {
+                                      value: "prescription",
+                                      label: "Prescription",
+                                      icon: "💊",
+                                      color: "#f0fdf4",
+                                      text: "#15803d",
+                                      border: "#86efac",
+                                    },
+                                    {
+                                      value: "discharge_summary",
+                                      label: "Discharge Summary",
+                                      icon: "🏥",
+                                      color: "#fff7ed",
+                                      text: "#c2410c",
+                                      border: "#fdba74",
+                                    },
+                                    {
+                                      value: "other",
+                                      label: "Other",
+                                      icon: "📄",
+                                      color: "#f8fafc",
+                                      text: "#475569",
+                                      border: "#cbd5e1",
+                                    },
+                                  ];
+                                  const cat =
+                                    CATEGORIES.find(
+                                      (c) => c.value === rec.category,
+                                    ) || CATEGORIES[4];
+                                  return (
+                                    <div className="da-rec-card" key={rec.id}>
+                                      <div
+                                        className="da-rec-banner"
+                                        style={{ background: cat.border }}
+                                      />
+                                      <div className="da-rec-body">
+                                        <div
+                                          className="da-rec-cat"
+                                          style={{
+                                            background: cat.color,
+                                            color: cat.text,
+                                            borderColor: cat.border,
+                                          }}
+                                        >
+                                          {cat.icon} {cat.label}
+                                        </div>
+                                        <div className="da-rec-title">
+                                          {rec.title}
+                                        </div>
+                                        {rec.description && (
+                                          <div className="da-rec-desc">
+                                            {rec.description}
+                                          </div>
+                                        )}
+                                        <div className="da-rec-meta">
+                                          {new Date(
+                                            rec.uploaded_at,
+                                          ).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                          })}
+                                          {rec.file_size
+                                            ? ` · ${(rec.file_size / 1024 / 1024).toFixed(2)} MB`
+                                            : ""}
+                                          {rec.file_name
+                                            ? ` · ${rec.file_name}`
+                                            : ""}
+                                        </div>
+                                      </div>
+                                      <div className="da-rec-footer">
+                                        <a
+                                          className="da-rec-view"
+                                          href={getFileUrl(rec.file_url)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          👁 View / Download
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

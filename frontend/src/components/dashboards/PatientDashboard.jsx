@@ -2,6 +2,7 @@ import { useState } from "react";
 import { logoutUser } from "../../utils/authService";
 import UpdateProfileForm from "../UpdateProfileForm";
 import BookAppointment from "../BookAppointment";
+import MedicalRecords from "../MedicalRecords";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -461,16 +462,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
 
             {activeTab === "medical" && (
               <>
-                <div className="pd-page-head">
-                  <h2>Medical Records</h2>
-                  <p>Your health history and documents.</p>
-                </div>
-                <div className="pd-section">
-                  <div className="pd-empty">
-                    <div className="pd-empty-icon">📋</div>
-                    <p>No medical records available.</p>
-                  </div>
-                </div>
+                <MedicalRecords />
               </>
             )}
 
