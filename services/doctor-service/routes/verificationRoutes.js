@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const verificationController = require('../controllers/verificationController');
 const { authMiddleware } = require('../middlewares/authMiddleware');
@@ -7,16 +8,27 @@ const { authMiddleware } = require('../middlewares/authMiddleware');
  * Verification Routes
  * All routes under /api/v1/verification
  *
- * Doctor routes require a valid JWT issued by auth-service (authMiddleware).
- * Admin routes (approve/reject) are also protected; add an admin-role check
- * here once role is included in the JWT payload.
+ * Files are uploaded directly to the backend and stored in a Docker volume.
+ * When a doctor is verified, all documents are automatically deleted.
  */
+
+// Configure multer for PDF uploads (10MB max)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype !== 'application/pdf') {
+            return cb(new Error('Only PDF files are allowed'), false);
+        }
+        cb(null, true);
+    },
+});
 
 // Admin: get all submissions
 router.get('/all', authMiddleware, verificationController.getAllSubmissions);
 
 // Doctor-protected routes
-router.post('/upload', authMiddleware, verificationController.uploadDocument);
+router.post('/upload', authMiddleware, upload.single('file'), verificationController.uploadDocument);
 router.get('/documents/:doctorId', authMiddleware, verificationController.getDocuments);
 router.get('/status/:doctorId', authMiddleware, verificationController.getStatus);
 router.delete('/documents/:documentId', authMiddleware, verificationController.deleteDocument);
