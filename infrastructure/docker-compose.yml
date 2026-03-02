@@ -76,11 +76,13 @@ services:
       DB_PASSWORD: password
       JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
       DOCTOR_SERVICE_URL: http://doctor-service:3003
+      UPLOAD_BASE: /app/uploads
+      UPLOAD_DIR: /app/uploads/medical-records
     depends_on:
       - postgres-patient
       - doctor-service
     volumes:
-      - ../services/patient-service/uploads:/app/uploads
+      - patient_uploads:/app/uploads
     networks:
       - healthcare-network
 
@@ -319,6 +321,7 @@ services:
 volumes:
   auth_db_data:
   patient_db_data:
+  patient_uploads:
   doctor_db_data:
   doctor_uploads:
   appointment_db_data:

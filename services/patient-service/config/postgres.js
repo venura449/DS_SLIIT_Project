@@ -14,7 +14,22 @@ pool.on('error', (err) => {
 });
 
 const initializeDatabase = async () => {
-    // Patient profile tables will be added here as the patient service is built out
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS medical_records (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            patient_id   VARCHAR(255) NOT NULL,
+            title        VARCHAR(255) NOT NULL,
+            category     VARCHAR(50)  NOT NULL DEFAULT 'general',
+            description  TEXT,
+            file_name    VARCHAR(255) NOT NULL,
+            file_path    VARCHAR(500) NOT NULL,
+            file_url     VARCHAR(500) NOT NULL,
+            file_size    BIGINT NOT NULL DEFAULT 0,
+            mime_type    VARCHAR(100) NOT NULL DEFAULT 'application/pdf',
+            uploaded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON medical_records(patient_id);
+    `);
     console.log('Patient DB initialized');
 };
 

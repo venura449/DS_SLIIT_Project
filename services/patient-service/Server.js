@@ -2,12 +2,18 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
 const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
+
+// Serve medical record uploads as static files
+// Gateway: /patients/uploads/* → patient-service /uploads/*
+const UPLOAD_BASE = process.env.UPLOAD_BASE || path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(UPLOAD_BASE));
 
 // Middleware
 app.use(cors());
@@ -17,7 +23,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const patientRoutes = require('./routes/patientRoutes');
+const medicalRecordRoutes = require('./routes/medicalRecordRoutes');
 app.use('/api/patients', patientRoutes);
+app.use('/api/v1/medical-records', medicalRecordRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
