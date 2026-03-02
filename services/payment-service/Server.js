@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
 const { initializeProducer, disconnectProducer } = require('./config/kafka');
+const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
 dotenv.config();
@@ -17,11 +18,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const paymentRoutes = require('./routes/paymentRoutes');
-app.use('/api/payments', paymentRoutes);
 
-// Webhook endpoint
-const webhookRoutes = require('./routes/webhookRoutes');
-app.use('/api/webhooks', webhookRoutes);
+app.use('/api', paymentRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -44,6 +42,9 @@ const PORT = process.env.PORT || 3006;
 const server = app.listen(PORT, async () => {
     console.log(`Payment Service running on port ${PORT}`);
     try {
+        await initializeDatabase();
+        console.log('Database initialized successfully');
+
         await initializeProducer();
     } catch (error) {
         console.error('Failed to start payment service:', error);
