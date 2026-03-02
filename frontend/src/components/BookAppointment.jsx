@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import * as appointmentService from "../utils/appointmentService";
+import * as telemedicineService from "../utils/telemedicineService";
 import { getUserData } from "../utils/authService";
+import JitsiMeeting from "./JitsiMeeting";
 
 /* ── constants ─────────────────────────────────────────────────── */
 
@@ -76,9 +78,14 @@ const BookAppointment = () => {
   // Booking modal
   const [bookingSlot, setBookingSlot] = useState(null); // slot object
   const [bookingReason, setBookingReason] = useState("");
+  const [isTelemedicine, setIsTelemedicine] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [bookingSuccess, setBookingSuccess] = useState(null);
+
+  // Telemedicine session
+  const [jitsiSession, setJitsiSession] = useState(null); // { roomName, displayName }
+  const [fetchingSession, setFetchingSession] = useState(null); // appointmentId being fetched
 
   // My bookings
   const [myBookings, setMyBookings] = useState([]);
@@ -349,6 +356,20 @@ const BookAppointment = () => {
         .ba-bookings-empty { text-align:center; padding:36px; color:#b0bec8; }
         .ba-bookings-empty-icon { font-size:36px; margin-bottom:8px; opacity:.5; }
 
+        /* ── telemedicine toggle ── */
+        .ba-tele-toggle { display:flex; align-items:center; gap:10px; background:#f0fdf4; border:1.5px solid #86efac; border-radius:10px; padding:11px 14px; margin-bottom:14px; cursor:pointer; transition:all .15s; }
+        .ba-tele-toggle:hover { border-color:#4ade80; }
+        .ba-tele-toggle.off { background:#f8fafc; border-color:#e4eaf0; }
+        .ba-tele-check { width:18px; height:18px; border-radius:5px; border:2px solid #4ade80; background:#15803d; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .ba-tele-check.off { background:#fff; border-color:#c7d2de; }
+        .ba-tele-label { font-size:13px; font-weight:600; color:#15803d; flex:1; }
+        .ba-tele-label.off { color:#7a8fa6; }
+        .ba-tele-sub { font-size:11px; color:#7a8fa6; }
+        /* ── telemedicine badge ── */
+        .ba-tele-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:8px; background:#f0fdf4; border:1px solid #86efac; color:#15803d; font-size:10.5px; font-weight:700; margin-left:6px; }
+        /* ── join meeting ── */
+        .ba-join-btn { padding:6px 14px; border-radius:8px; border:none; background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; font-size:12px; font-weight:700; cursor:pointer; font-family:'DM Sans',sans-serif; display:flex; align-items:center; gap:5px; }
+        .ba-join-btn:disabled { opacity:.6; cursor:default; }
         /* ── chat panel ── */
         .ba-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; font-family:'DM Sans',sans-serif; }
         .ba-chat-btn:hover { background:#eff6ff; }
@@ -389,11 +410,22 @@ const BookAppointment = () => {
           {/* Success banner */}
           {bookingSuccess && (
             <div className="ba-success">
-              <div className="ba-success-title">✓ Appointment Confirmed!</div>
+              <div className="ba-success-title">✓ Appointment Requested!</div>
               <div className="ba-success-body">
                 Dr. {bookingSuccess.doctor} on {bookingSuccess.date} at{" "}
                 {bookingSuccess.time}
+                {bookingSuccess.isTelemedicine && (
+                  <span className="ba-tele-badge" style={{ marginLeft: 8 }}>
+                    📹 Telemedicine
+                  </span>
+                )}
               </div>
+              {bookingSuccess.isTelemedicine && (
+                <div style={{ fontSize: 12, color: "#15803d", marginTop: 6 }}>
+                  📌 Once approved, a video meeting room will be created. You
+                  can join from My Appointments.
+                </div>
+              )}
             </div>
           )}
 
@@ -610,6 +642,9 @@ const BookAppointment = () => {
                                   : b.status.charAt(0).toUpperCase() +
                                     b.status.slice(1)}
                         </span>
+                        {b.is_telemedicine && (
+                          <span className="ba-tele-badge">📹 Telemedicine</span>
+                        )}
                       </div>
                       <div className="ba-booking-meta">
                         {fmtDate(
@@ -624,7 +659,16 @@ const BookAppointment = () => {
                           {b.reason}
                         </span>
                       )}
-                    </div>
+                    </div>{" "}
+                    {b.is_telemedicine && b.status === "confirmed" && (
+                      <button
+                        className="ba-join-btn"
+                        onClick={() => handleJoinMeeting(b)}
+                        disabled={fetchingSession === b.id}
+                      >
+                        {fetchingSession === b.id ? "\u2026" : "📹 Join"}
+                      </button>
+                    )}{" "}
                     {b.status === "confirmed" && (
                       <button
                         className="ba-cancel-btn"
@@ -715,8 +759,23 @@ const BookAppointment = () => {
       )}
 
       {/* ══════════════════ BOOKING MODAL ══════════════════════════ */}
+      {/* ══════════════════ JITSI MEETING ════════════════════════ */}
+      {jitsiSession && (
+        <JitsiMeeting
+          roomName={jitsiSession.roomName}
+          displayName={jitsiSession.displayName}
+          onClose={() => setJitsiSession(null)}
+        />
+      )}
+
       {bookingSlot && (
-        <div className="ba-overlay" onClick={() => setBookingSlot(null)}>
+        <div
+          className="ba-overlay"
+          onClick={() => {
+            setBookingSlot(null);
+            setIsTelemedicine(false);
+          }}
+        >
           <div className="ba-modal" onClick={(e) => e.stopPropagation()}>
             <div className="ba-modal-title">Confirm Appointment</div>
             <div className="ba-modal-sub">
@@ -741,6 +800,38 @@ const BookAppointment = () => {
                   {parseFloat(selectedDoctor.consultation_fee).toFixed(2)}
                 </div>
               )}
+            </div>{" "}
+            {/* Telemedicine toggle */}
+            <div
+              className={`ba-tele-toggle${isTelemedicine ? "" : " off"}`}
+              onClick={() => setIsTelemedicine((v) => !v)}
+            >
+              <div className={`ba-tele-check${isTelemedicine ? "" : " off"}`}>
+                {isTelemedicine && (
+                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                    <path
+                      d="M1 4L3.5 6.5L9 1"
+                      stroke="#fff"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className={`ba-tele-label${isTelemedicine ? "" : " off"}`}>
+                  📹{" "}
+                  {isTelemedicine
+                    ? "Video consultation (Telemedicine)"
+                    : "In-person appointment"}
+                </div>
+                <div className="ba-tele-sub">
+                  {isTelemedicine
+                    ? "You will receive a Jitsi video meeting link once approved."
+                    : "Switch to telemedicine for a video call instead."}
+                </div>
+              </div>
             </div>
             <div className="ba-modal-field">
               <label>Reason for Visit (optional)</label>
@@ -757,7 +848,10 @@ const BookAppointment = () => {
             <div className="ba-modal-actions">
               <button
                 className="ba-modal-cancel"
-                onClick={() => setBookingSlot(null)}
+                onClick={() => {
+                  setBookingSlot(null);
+                  setIsTelemedicine(false);
+                }}
               >
                 Cancel
               </button>

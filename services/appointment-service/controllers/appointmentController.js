@@ -2,6 +2,7 @@ const db = require('../config/postgres');
 const axios = require('axios');
 
 const DOCTOR_SERVICE_URL = process.env.DOCTOR_SERVICE_URL || 'http://localhost:3003';
+const TELEMEDICINE_SERVICE_URL = process.env.TELEMEDICINE_SERVICE_URL || 'http://localhost:3005';
 
 /* ── helpers ───────────────────────────────────────────────────── */
 
@@ -92,7 +93,7 @@ exports.getDoctorAvailableSlots = async (req, res) => {
 exports.createBooking = async (req, res) => {
     try {
         const patientId = req.user.userId;
-        const { doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName } = req.body;
+        const { doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName, isTelemedicine } = req.body;
 
         if (!doctorId || !appointmentDate || !startTime || !endTime) {
             return res.status(400).json({
@@ -119,10 +120,10 @@ exports.createBooking = async (req, res) => {
 
         const result = await db.query(
             `INSERT INTO appointments
-                (patient_id, doctor_id, slot_id, appointment_date, start_time, end_time, reason, doctor_name, patient_name, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+                (patient_id, doctor_id, slot_id, appointment_date, start_time, end_time, reason, doctor_name, patient_name, status, is_telemedicine)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10)
              RETURNING *`,
-            [patientId, doctorId, slotId || null, appointmentDate, startTime, endTime, reason || null, doctorName || null, patientName || null]
+            [patientId, doctorId, slotId || null, appointmentDate, startTime, endTime, reason || null, doctorName || null, patientName || null, isTelemedicine === true]
         );
 
         res.status(201).json({ success: true, data: result.rows[0] });
@@ -238,7 +239,23 @@ exports.approveAppointment = async (req, res) => {
             });
         }
 
-        res.status(200).json({ success: true, data: result.rows[0] });
+        const approved = result.rows[0];
+
+        // If this is a telemedicine appointment, create a session in telemedicine service
+        if (approved.is_telemedicine) {
+            try {
+                await axios.post(`${TELEMEDICINE_SERVICE_URL}/api/telemedicine/sessions`, {
+                    appointmentId: approved.id,
+                    patientId: approved.patient_id,
+                    doctorId: approved.doctor_id,
+                });
+            } catch (err) {
+                console.error('Failed to create telemedicine session:', err.message);
+                // Non-fatal — approval still succeeds
+            }
+        }
+
+        res.status(200).json({ success: true, data: approved });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

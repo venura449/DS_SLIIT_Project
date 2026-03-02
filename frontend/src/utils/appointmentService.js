@@ -32,11 +32,11 @@ export const getDoctorSlots = async (doctorId, weekStart) => {
 
 /* ── Booking management (authenticated) ───────────────────────── */
 
-export const createBooking = async ({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName }) => {
+export const createBooking = async ({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName, isTelemedicine }) => {
     try {
         const res = await authenticatedFetch(APPT_API, {
             method: 'POST',
-            body: JSON.stringify({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName }),
+            body: JSON.stringify({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName, isTelemedicine: !!isTelemedicine }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to create booking');

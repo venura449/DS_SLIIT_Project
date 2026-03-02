@@ -10,11 +10,13 @@ import {
   getVerificationStatus,
 } from "../../utils/verificationService";
 import * as appointmentService from "../../utils/appointmentService";
+import * as telemedicineService from "../../utils/telemedicineService";
 import {
   getPatientMedicalRecords,
   getFileUrl,
 } from "../../utils/medicalRecordService";
 import UpdateProfileForm from "../UpdateProfileForm";
+import JitsiMeeting from "../JitsiMeeting";
 import PDFUploader from "../PDFUploader";
 import ScheduleManager from "../ScheduleManager";
 
@@ -74,6 +76,10 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [chatSending, setChatSending] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
   const chatEndRef = useRef(null);
+
+  // Telemedicine meeting
+  const [jitsiSession, setJitsiSession] = useState(null);
+  const [fetchingSession, setFetchingSession] = useState(null);
 
   // Patient medical records panel (per appointment)
   const [recordsApptId, setRecordsApptId] = useState(null);
@@ -175,6 +181,21 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
       );
     }
     setApprovingId(null);
+  };
+
+  const handleJoinMeeting = async (appt) => {
+    setFetchingSession(appt.id);
+    const res = await telemedicineService.getSessionByAppointment(appt.id);
+    if (res.success && res.data) {
+      setJitsiSession({
+        roomName: res.data.meeting_room,
+        displayName: `Dr. ${user?.name || "Doctor"}`,
+        sessionId: res.data.id,
+      });
+    } else {
+      alert("Meeting room not available yet. Please try again shortly.");
+    }
+    setFetchingSession(null);
   };
 
   const openChat = async (apptId) => {
@@ -729,7 +750,22 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                 <div className="dd-section">
                   <div className="dd-empty">
                     <div className="dd-empty-icon">ðŸ’¬</div>
-                    <p>No active consultations at this time.</p>
+                    <p>
+                      Go to the <strong>Appointments</strong> tab and click the{" "}
+                      <span
+                        style={{
+                          background: "#dcfce7",
+                          color: "#15803d",
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          fontWeight: 700,
+                        }}
+                      >
+                        📹 Join
+                      </span>{" "}
+                      button on a confirmed telemedicine appointment to start a
+                      video session.
+                    </p>
                   </div>
                 </div>
               </>
@@ -1192,6 +1228,9 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; }
                   .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
                   .da-approve-btn:disabled { opacity:.5; cursor:default; }
+                  .da-join-btn { padding:6px 14px; border-radius:8px; border:none; background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; font-size:12px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; }
+                  .da-join-btn:disabled { opacity:.6; cursor:default; }
+                  .da-tele-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:8px; background:#f0fdf4; border:1px solid #86efac; color:#15803d; font-size:10.5px; font-weight:700; margin-left:6px; }
                   .da-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; }
                   .da-chat-panel { border-top:1.5px solid #e4eaf0; background:#f8fafc; }
                   .da-chat-messages { max-height:240px; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:8px; }
@@ -1308,6 +1347,11 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                           <div className="da-card-info">
                             <div className="da-patient-name">
                               {appt.patient_name || "Patient"}
+                              {appt.is_telemedicine && (
+                                <span className="da-tele-badge">
+                                  📹 Telemedicine
+                                </span>
+                              )}
                             </div>
                             <div className="da-appt-time">
                               {dateStr} &nbsp;·&nbsp; {fmt12(appt.start_time)} –{" "}
@@ -1337,6 +1381,18 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                 {approvingId === appt.id ? "…" : "Approve"}
                               </button>
                             )}
+                            {appt.is_telemedicine &&
+                              appt.status === "confirmed" && (
+                                <button
+                                  className="da-join-btn"
+                                  disabled={fetchingSession === appt.id}
+                                  onClick={() => handleJoinMeeting(appt)}
+                                >
+                                  {fetchingSession === appt.id
+                                    ? "…"
+                                    : "📹 Join"}
+                                </button>
+                              )}
                             <button
                               className="da-records-btn"
                               onClick={() =>
@@ -1844,6 +1900,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           user={user}
           onClose={() => setShowProfile(false)}
           onSuccess={handleProfileUpdate}
+        />
+      )}
+
+      {jitsiSession && (
+        <JitsiMeeting
+          roomName={jitsiSession.roomName}
+          displayName={jitsiSession.displayName}
+          onClose={() => setJitsiSession(null)}
         />
       )}
     </>
