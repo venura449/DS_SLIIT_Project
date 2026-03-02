@@ -95,8 +95,11 @@ services:
       DB_USER: admin
       DB_PASSWORD: password
       JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      UPLOAD_DIR: /uploads/doctor-verification
     depends_on:
       - postgres-doctor
+    volumes:
+      - doctor_uploads:/uploads/doctor-verification
     networks:
       - healthcare-network
 
@@ -311,6 +314,7 @@ volumes:
   auth_db_data:
   patient_db_data:
   doctor_db_data:
+  doctor_uploads:
   appointment_db_data:
   telemedicine_db_data:
   payment_db_data:

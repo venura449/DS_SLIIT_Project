@@ -1,23 +1,36 @@
 /**
  * Verification Controller
  * Handles doctor verification document uploads and status management
+ * Files are stored locally in Docker volume
  */
 
 const VerificationModel = require('../models/VerificationModel');
+const { saveFile, deleteFile, deleteDocorFiles } = require('../utils/fileStorage');
 
 /**
- * Upload a verification document
- * POST /api/verification/upload
+ * Upload a verification document (file-based)
+ * POST /api/v1/verification/upload
+ * Expects multipart/form-data with:
+ * - file: PDF file
+ * - documentType: license | government_id | credentials | insurance
  */
 exports.uploadDocument = async (req, res) => {
   try {
     const doctorId = req.user.userId;
-    const { documentType, documentUrl, publicId, fileName, fileSize, uploadedAt } = req.body;
+    const { documentType } = req.body;
+    const file = req.file;
 
-    if (!documentType || !documentUrl) {
+    if (!file) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: documentType, documentUrl',
+        message: 'No file uploaded',
+      });
+    }
+
+    if (!documentType) {
+      return res.status(400).json({
+        success: false,
+        message: 'documentType is required',
       });
     }
 
@@ -29,14 +42,25 @@ exports.uploadDocument = async (req, res) => {
       });
     }
 
+    // Save file to disk
+    const saveResult = await saveFile(file.buffer, file.originalname, doctorId);
+    if (!saveResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to save file',
+        error: saveResult.error,
+      });
+    }
+
+    // Save document metadata to database
     const { document, status } = await VerificationModel.saveDocument({
       doctorId,
       documentType,
-      documentUrl,
-      publicId,
-      fileName,
-      fileSize,
-      uploadedAt,
+      documentUrl: saveResult.documentUrl, // Local file path
+      publicId: null, // Not used for local storage
+      fileName: saveResult.fileName,
+      fileSize: file.size,
+      uploadedAt: saveResult.uploadedAt,
     });
 
     res.status(201).json({
@@ -52,7 +76,7 @@ exports.uploadDocument = async (req, res) => {
 
 /**
  * Get all documents for a doctor
- * GET /api/verification/documents/:doctorId
+ * GET /api/v1/verification/documents/:doctorId
  */
 exports.getDocuments = async (req, res) => {
   try {
@@ -73,7 +97,7 @@ exports.getDocuments = async (req, res) => {
 
 /**
  * Get verification status for a doctor
- * GET /api/verification/status/:doctorId
+ * GET /api/v1/verification/status/:doctorId
  */
 exports.getStatus = async (req, res) => {
   try {
@@ -94,7 +118,7 @@ exports.getStatus = async (req, res) => {
 
 /**
  * Delete a verification document
- * DELETE /api/verification/documents/:documentId
+ * DELETE /api/v1/verification/documents/:documentId
  */
 exports.deleteDocument = async (req, res) => {
   try {
@@ -109,6 +133,10 @@ exports.deleteDocument = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    // Delete file from disk
+    await deleteFile(document.documentUrl);
+
+    // Delete from database
     const deleted = await VerificationModel.deleteDocument(documentId);
     if (!deleted) {
       return res.status(500).json({ success: false, message: 'Failed to delete document' });
@@ -129,7 +157,7 @@ exports.deleteDocument = async (req, res) => {
 
 /**
  * Submit documents for verification
- * POST /api/verification/submit
+ * POST /api/v1/verification/submit
  */
 exports.submitForVerification = async (req, res) => {
   try {
@@ -158,7 +186,7 @@ exports.submitForVerification = async (req, res) => {
 
 /**
  * Get all verification submissions (Admin only)
- * GET /api/verification/all
+ * GET /api/v1/verification/all
  */
 exports.getAllSubmissions = async (req, res) => {
   try {
@@ -172,7 +200,8 @@ exports.getAllSubmissions = async (req, res) => {
 
 /**
  * Approve doctor verification (Admin only)
- * POST /api/verification/approve/:doctorId
+ * POST /api/v1/verification/approve/:doctorId
+ * DELETES ALL ASSOCIATED DOCUMENTS AFTER APPROVAL
  */
 exports.approveVerification = async (req, res) => {
   try {
@@ -190,9 +219,23 @@ exports.approveVerification = async (req, res) => {
       });
     }
 
+    // Get all documents before approval
+    const documents = await VerificationModel.getDocumentsByDoctorId(doctorId);
+
+    // Approve verification
     const approvedStatus = await VerificationModel.approveVerification(doctorId);
 
-    res.status(200).json({ success: true, message: 'Doctor verification approved', data: approvedStatus });
+    // Delete all documents (files from disk + database records)
+    for (const doc of documents) {
+      await deleteFile(doc.documentUrl);
+      await VerificationModel.deleteDocument(doc.id);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Doctor verification approved and documents deleted',
+      data: approvedStatus
+    });
   } catch (error) {
     console.error('Error approving verification:', error);
     res.status(500).json({ success: false, message: 'Failed to approve verification', error: error.message });
@@ -201,7 +244,8 @@ exports.approveVerification = async (req, res) => {
 
 /**
  * Reject doctor verification (Admin only)
- * POST /api/verification/reject/:doctorId
+ * POST /api/v1/verification/reject/:doctorId
+ * Documents remain stored for resubmission
  */
 exports.rejectVerification = async (req, res) => {
   try {

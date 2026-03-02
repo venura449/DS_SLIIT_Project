@@ -1,7 +1,6 @@
 ﻿import { useState, useEffect } from "react";
-import { logoutUser } from "../../utils/authService";
+import { logoutUser, getAuthToken } from "../../utils/authService";
 import {
-  submitVerificationDocument,
   submitForVerification,
   getVerificationDocuments,
   getVerificationStatus,
@@ -73,30 +72,6 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
   const handleUploadError = (documentType, error) => {
     setUploadError(`Error uploading ${documentType}: ${error}`);
-  };
-
-  const handleBackendSave = async (documentType, uploadedFile) => {
-    try {
-      const result = await submitVerificationDocument(
-        documentType,
-        uploadedFile,
-      );
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error,
-        };
-      }
-      return {
-        success: true,
-        data: result.data,
-      };
-    } catch (err) {
-      return {
-        success: false,
-        error: err.message || "Failed to save document",
-      };
-    }
   };
 
   const handleSubmitForVerification = async () => {
@@ -662,60 +637,56 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                       <div>
                         <PDFUploader
                           label="Medical License"
-                          folder="doctor-verification/licenses"
                           documentType="license"
+                          token={getAuthToken()}
                           onSuccess={(response) =>
                             handleDocumentUpload("license", response)
                           }
                           onError={(error) =>
                             handleUploadError("Medical License", error)
                           }
-                          onBackendSave={handleBackendSave}
                         />
                       </div>
 
                       <div>
                         <PDFUploader
                           label="Government-issued ID"
-                          folder="doctor-verification/ids"
                           documentType="government_id"
+                          token={getAuthToken()}
                           onSuccess={(response) =>
                             handleDocumentUpload("government_id", response)
                           }
                           onError={(error) =>
                             handleUploadError("Government ID", error)
                           }
-                          onBackendSave={handleBackendSave}
                         />
                       </div>
 
                       <div>
                         <PDFUploader
                           label="Professional Credentials"
-                          folder="doctor-verification/credentials"
                           documentType="credentials"
+                          token={getAuthToken()}
                           onSuccess={(response) =>
                             handleDocumentUpload("credentials", response)
                           }
                           onError={(error) =>
                             handleUploadError("Credentials", error)
                           }
-                          onBackendSave={handleBackendSave}
                         />
                       </div>
 
                       <div>
                         <PDFUploader
                           label="Insurance Certificate"
-                          folder="doctor-verification/insurance"
                           documentType="insurance"
+                          token={getAuthToken()}
                           onSuccess={(response) =>
                             handleDocumentUpload("insurance", response)
                           }
                           onError={(error) =>
                             handleUploadError("Insurance Certificate", error)
                           }
-                          onBackendSave={handleBackendSave}
                         />
                       </div>
                     </div>
@@ -986,7 +957,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                               })}
                             </div>
                             <a
-                              href={doc.documentUrl}
+                              href={`${import.meta.env.VITE_API_BASE_URL}/doctors${doc.documentUrl}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{

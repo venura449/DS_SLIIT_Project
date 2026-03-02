@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
 const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
@@ -14,6 +15,10 @@ app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files for uploaded documents
+const uploadsDir = process.env.UPLOAD_DIR || '/uploads/doctor-verification';
+app.use('/uploads/doctor-verification', express.static(uploadsDir));
 
 // Routes
 const doctorRoutes = require('./routes/doctorRoutes');

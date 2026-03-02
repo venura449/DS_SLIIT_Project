@@ -1231,7 +1231,7 @@ function DoctorVerification() {
                                 </div>
                                 {doc.documentUrl ? (
                                   <a
-                                    href={doc.documentUrl}
+                                    href={`${import.meta.env.VITE_API_BASE_URL}/doctors${doc.documentUrl}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="dv-doc-link"

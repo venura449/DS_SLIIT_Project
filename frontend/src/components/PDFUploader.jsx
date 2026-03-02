@@ -1,15 +1,14 @@
 import { useState, useRef } from "react";
-import { uploadPDFToCloudinary } from "../utils/cloudinaryService";
+import { uploadPDFToBackend } from "../utils/cloudinaryService";
 
 const PDFUploader = ({
   onSuccess,
   onError,
-  onBackendSave,
   label = "Upload PDF",
-  maxSize = 25,
-  folder = "doctor-verification",
-  documentType = "document",
+  maxSize = 10,
+  documentType = "license",
   multiple = false,
+  token, // JWT token required for backend upload
 }) => {
   const [loading, setLoading] = useState(false);
   const [savingToBackend, setSavingToBackend] = useState(false);
@@ -21,6 +20,14 @@ const PDFUploader = ({
     const files = Array.from(e.target.files || []);
 
     if (!files.length) return;
+
+    // Validate token
+    if (!token) {
+      const errorMsg = "Authentication token is required to upload documents";
+      setError(errorMsg);
+      if (onError) onError(errorMsg);
+      return;
+    }
 
     // Validate files
     const invalidFiles = files.filter((file) => !file.type.includes("pdf"));
@@ -47,7 +54,7 @@ const PDFUploader = ({
 
     try {
       const uploadPromises = files.map((file) =>
-        uploadPDFToCloudinary(file, folder),
+        uploadPDFToBackend(file, documentType, token),
       );
       const results = await Promise.all(uploadPromises);
 
@@ -57,27 +64,6 @@ const PDFUploader = ({
         setError(errorMsg);
         if (onError) onError(errorMsg);
         return;
-      }
-
-      // Notify backend if callback provided
-      if (onBackendSave) {
-        setSavingToBackend(true);
-        const backendSavePromises = results.map((result) =>
-          onBackendSave(documentType, result),
-        );
-        const saveResults = await Promise.all(backendSavePromises);
-
-        const failedSaves = saveResults.filter((r) => !r.success);
-        if (failedSaves.length > 0) {
-          const errorMsg = failedSaves.map((r) => r.error).join(", ");
-          setError(
-            `Uploaded to Cloudinary but failed to save to database: ${errorMsg}`,
-          );
-          if (onError) onError(errorMsg);
-          setSavingToBackend(false);
-          return;
-        }
-        setSavingToBackend(false);
       }
 
       // Success
