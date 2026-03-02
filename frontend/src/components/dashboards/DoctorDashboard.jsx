@@ -7,6 +7,7 @@ import {
 } from "../../utils/verificationService";
 import UpdateProfileForm from "../UpdateProfileForm";
 import PDFUploader from "../PDFUploader";
+import ScheduleManager from "../ScheduleManager";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -518,25 +519,12 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
             {activeTab === "schedule" && (
               <>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "18px",
-                  }}
-                >
-                  <div className="dd-page-head" style={{ marginBottom: 0 }}>
-                    <h2>Schedule</h2>
-                    <p>Manage your working hours and availability.</p>
-                  </div>
-                  <button className="dd-btn dd-btn-primary">+ Add Slot</button>
+                <div className="dd-page-head">
+                  <h2>Schedule</h2>
+                  <p>Manage your working hours and availability.</p>
                 </div>
                 <div className="dd-section">
-                  <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ“…</div>
-                    <p>No schedule set. Add your available time slots.</p>
-                  </div>
+                  <ScheduleManager />
                 </div>
               </>
             )}
