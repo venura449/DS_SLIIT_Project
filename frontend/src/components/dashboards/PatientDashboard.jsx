@@ -3,6 +3,7 @@ import { logoutUser } from "../../utils/authService";
 import UpdateProfileForm from "../UpdateProfileForm";
 import BookAppointment from "../BookAppointment";
 import MedicalRecords from "../MedicalRecords";
+import PatientPrescriptions from "../PatientPrescriptions";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -488,13 +489,13 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               <>
                 <div className="pd-page-head">
                   <h2>Prescriptions</h2>
-                  <p>Download and manage your prescriptions.</p>
+                  <p>
+                    Prescriptions issued by your doctor after confirmed
+                    appointments.
+                  </p>
                 </div>
                 <div className="pd-section">
-                  <div className="pd-empty">
-                    <div className="pd-empty-icon">💊</div>
-                    <p>No prescriptions found.</p>
-                  </div>
+                  <PatientPrescriptions />
                 </div>
               </>
             )}

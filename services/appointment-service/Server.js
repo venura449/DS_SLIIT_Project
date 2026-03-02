@@ -17,7 +17,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const appointmentRoutes = require('./routes/appointmentRoutes');
+const prescriptionRoutes = require('./routes/prescriptionRoutes');
 app.use('/api/v1/appointments', appointmentRoutes);
+app.use('/api/v1/prescriptions', prescriptionRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

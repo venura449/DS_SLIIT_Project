@@ -61,6 +61,39 @@ const initializeDatabase = async () => {
         CREATE INDEX IF NOT EXISTS idx_messages_appointment ON appointment_messages(appointment_id);
     `);
 
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS prescriptions (
+            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            appointment_id   UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+            doctor_id        VARCHAR(255) NOT NULL,
+            patient_id       VARCHAR(255) NOT NULL,
+            doctor_name      VARCHAR(255),
+            patient_name     VARCHAR(255),
+            diagnosis        TEXT NOT NULL,
+            notes            TEXT,
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_uq_prescription_appointment
+            ON prescriptions(appointment_id);
+        CREATE INDEX IF NOT EXISTS idx_prescriptions_doctor  ON prescriptions(doctor_id);
+        CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON prescriptions(patient_id);
+
+        CREATE TABLE IF NOT EXISTS prescription_drugs (
+            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            prescription_id  UUID NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
+            rxcui            VARCHAR(50),
+            drug_name        TEXT NOT NULL,
+            strength         VARCHAR(100),
+            dosage_form      VARCHAR(100),
+            frequency        VARCHAR(50) NOT NULL,
+            duration         VARCHAR(100) NOT NULL,
+            instructions     TEXT,
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_presc_drugs_prescription ON prescription_drugs(prescription_id);
+    `);
+
     console.log('Appointment DB tables initialized');
 };
 
