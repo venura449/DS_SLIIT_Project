@@ -3,6 +3,7 @@ const http = require('http');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
 dotenv.config();
@@ -38,8 +39,16 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3005;
 
-server.listen(PORT, () => {
-    console.log(`Telemedicine Service running on port ${PORT}`);
+const startServer = async () => {
+    await initializeDatabase();
+    server.listen(PORT, () => {
+        console.log(`Telemedicine Service running on port ${PORT}`);
+    });
+};
+
+startServer().catch((err) => {
+    console.error('Failed to start telemedicine service:', err);
+    process.exit(1);
 });
 
 module.exports = server;
