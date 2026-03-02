@@ -17,6 +17,7 @@ import {
 import UpdateProfileForm from "../UpdateProfileForm";
 import PDFUploader from "../PDFUploader";
 import ScheduleManager from "../ScheduleManager";
+import PrescriptionManager from "../PrescriptionManager";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -737,28 +738,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
             {activeTab === "prescriptions" && (
               <>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "18px",
-                  }}
-                >
-                  <div className="dd-page-head" style={{ marginBottom: 0 }}>
-                    <h2>Prescriptions</h2>
-                    <p>Issue and manage patient prescriptions.</p>
-                  </div>
-                  <button className="dd-btn dd-btn-primary">
-                    + New Prescription
-                  </button>
+                <div className="dd-page-head">
+                  <h2>Prescriptions</h2>
+                  <p>
+                    Issue prescriptions for confirmed appointments. Drugs
+                    suggested via RxNorm.
+                  </p>
                 </div>
-                <div className="dd-section">
-                  <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ’Š</div>
-                    <p>No prescriptions issued yet.</p>
-                  </div>
-                </div>
+                <PrescriptionManager />
               </>
             )}
 
