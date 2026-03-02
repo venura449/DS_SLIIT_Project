@@ -32,11 +32,11 @@ export const getDoctorSlots = async (doctorId, weekStart) => {
 
 /* ── Booking management (authenticated) ───────────────────────── */
 
-export const createBooking = async ({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName }) => {
+export const createBooking = async ({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName }) => {
     try {
         const res = await authenticatedFetch(APPT_API, {
             method: 'POST',
-            body: JSON.stringify({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName }),
+            body: JSON.stringify({ doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to create booking');
@@ -63,6 +63,56 @@ export const cancelBooking = async (id) => {
         const res = await authenticatedFetch(`${APPT_API}/${id}/cancel`, { method: 'PUT' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to cancel booking');
+        return { success: true, data: data.data };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+};
+
+/* ── Doctor-facing (authenticated) ────────────────────────────── */
+
+export const getDoctorAppointments = async (filter) => {
+    try {
+        const url = filter ? `${APPT_API}/doctor?filter=${filter}` : `${APPT_API}/doctor`;
+        const res = await authenticatedFetch(url);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to fetch appointments');
+        return { success: true, data: data.data };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+};
+
+export const approveAppointment = async (id) => {
+    try {
+        const res = await authenticatedFetch(`${APPT_API}/${id}/approve`, { method: 'PUT' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to approve appointment');
+        return { success: true, data: data.data };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+};
+
+export const getMessages = async (appointmentId) => {
+    try {
+        const res = await authenticatedFetch(`${APPT_API}/${appointmentId}/messages`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to fetch messages');
+        return { success: true, data: data.data };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+};
+
+export const sendMessage = async (appointmentId, message) => {
+    try {
+        const res = await authenticatedFetch(`${APPT_API}/${appointmentId}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ message }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to send message');
         return { success: true, data: data.data };
     } catch (e) {
         return { success: false, error: e.message };

@@ -23,11 +23,11 @@ const initializeDatabase = async () => {
             appointment_date DATE NOT NULL,
             start_time       TIME NOT NULL,
             end_time         TIME NOT NULL,
-            status           VARCHAR(20) DEFAULT 'confirmed'
-                             CONSTRAINT chk_appt_status CHECK (status IN ('confirmed','cancelled','completed')),
+            status           VARCHAR(20) DEFAULT 'pending',
             reason           TEXT,
             notes            TEXT,
             doctor_name      VARCHAR(255),
+            patient_name     VARCHAR(255),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -39,6 +39,29 @@ const initializeDatabase = async () => {
         CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id);
         CREATE INDEX IF NOT EXISTS idx_appointments_doctor  ON appointments(doctor_id);
     `);
+
+    // Migrate: add patient_name column, fix status constraint & default for existing DBs
+    await pool.query(`
+        ALTER TABLE appointments ADD COLUMN IF NOT EXISTS patient_name VARCHAR(255);
+        ALTER TABLE appointments ALTER COLUMN status SET DEFAULT 'pending';
+        ALTER TABLE appointments DROP CONSTRAINT IF EXISTS chk_appt_status;
+        ALTER TABLE appointments ADD CONSTRAINT chk_appt_status
+            CHECK (status IN ('pending','confirmed','cancelled','completed'));
+    `);
+
+    // Messages table for doctor-patient conversation per appointment
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS appointment_messages (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+            sender_id      VARCHAR(255) NOT NULL,
+            sender_role    VARCHAR(20) NOT NULL CHECK (sender_role IN ('patient','doctor')),
+            message        TEXT NOT NULL,
+            sent_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_messages_appointment ON appointment_messages(appointment_id);
+    `);
+
     console.log('Patient DB tables initialized');
 };
 
