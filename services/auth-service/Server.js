@@ -19,8 +19,10 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const internalRoutes = require('./routes/internalRoutes');
 app.use('/api/v1', authRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/internal', internalRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

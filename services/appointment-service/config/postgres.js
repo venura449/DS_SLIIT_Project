@@ -42,6 +42,7 @@ const initializeDatabase = async () => {
 
     await pool.query(`
         ALTER TABLE appointments ADD COLUMN IF NOT EXISTS patient_name VARCHAR(255);
+        ALTER TABLE appointments ADD COLUMN IF NOT EXISTS patient_phone VARCHAR(30);
         ALTER TABLE appointments ALTER COLUMN status SET DEFAULT 'pending';
         ALTER TABLE appointments DROP CONSTRAINT IF EXISTS chk_appt_status;
         ALTER TABLE appointments ADD CONSTRAINT chk_appt_status

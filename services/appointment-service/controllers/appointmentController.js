@@ -1,5 +1,6 @@
 const db = require('../config/postgres');
 const axios = require('axios');
+const { sendAppointmentEvent } = require('../config/kafka');
 
 const DOCTOR_SERVICE_URL = process.env.DOCTOR_SERVICE_URL || 'http://localhost:3003';
 const TELEMEDICINE_SERVICE_URL = process.env.TELEMEDICINE_SERVICE_URL || 'http://localhost:3005';
@@ -94,12 +95,25 @@ exports.createBooking = async (req, res) => {
     try {
         const patientId = req.user.userId;
         const { doctorId, slotId, appointmentDate, startTime, endTime, reason, doctorName, patientName, isTelemedicine } = req.body;
+        let { patientPhone } = req.body;
 
         if (!doctorId || !appointmentDate || !startTime || !endTime) {
             return res.status(400).json({
                 success: false,
                 message: 'doctorId, appointmentDate, startTime, and endTime are required',
             });
+        }
+
+        // Resolve patientPhone from auth-service if not provided by the frontend
+        if (!patientPhone) {
+            try {
+                const userRes = await axios.get(
+                    `${process.env.AUTH_SERVICE_URL || 'http://localhost:3001'}/api/v1/internal/users/${patientId}`
+                );
+                patientPhone = userRes.data?.data?.phone || null;
+            } catch (err) {
+                console.warn('Could not resolve patientPhone from auth-service:', err.message);
+            }
         }
 
         const existing = await db.query(
@@ -120,13 +134,28 @@ exports.createBooking = async (req, res) => {
 
         const result = await db.query(
             `INSERT INTO appointments
-                (patient_id, doctor_id, slot_id, appointment_date, start_time, end_time, reason, doctor_name, patient_name, status, is_telemedicine)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10)
+                (patient_id, doctor_id, slot_id, appointment_date, start_time, end_time, reason, doctor_name, patient_name, patient_phone, status, is_telemedicine)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
              RETURNING *`,
-            [patientId, doctorId, slotId || null, appointmentDate, startTime, endTime, reason || null, doctorName || null, patientName || null, isTelemedicine === true]
+            [patientId, doctorId, slotId || null, appointmentDate, startTime, endTime, reason || null, doctorName || null, patientName || null, patientPhone || null, isTelemedicine === true]
         );
 
-        res.status(201).json({ success: true, data: result.rows[0] });
+        const appointment = result.rows[0];
+
+        // Publish event so notification-service can send confirmation SMS
+        await sendAppointmentEvent('APPOINTMENT_BOOKED', {
+            appointmentId: appointment.id,
+            patientId: appointment.patient_id,
+            doctorId: appointment.doctor_id,
+            patientName: appointment.patient_name,
+            patientPhone: appointment.patient_phone,
+            doctorName: appointment.doctor_name,
+            appointmentDate: appointment.appointment_date,
+            startTime: appointment.start_time,
+            status: appointment.status,
+        });
+
+        res.status(201).json({ success: true, data: appointment });
     } catch (error) {
         if (error.code === '23505') {
             return res.status(409).json({
@@ -240,6 +269,19 @@ exports.approveAppointment = async (req, res) => {
         }
 
         const approved = result.rows[0];
+
+        // Publish confirmation event so notification-service can send SMS to patient
+        await sendAppointmentEvent('APPOINTMENT_BOOKED', {
+            appointmentId: approved.id,
+            patientId: approved.patient_id,
+            doctorId: approved.doctor_id,
+            patientName: approved.patient_name,
+            patientPhone: approved.patient_phone,
+            doctorName: approved.doctor_name,
+            appointmentDate: approved.appointment_date,
+            startTime: approved.start_time,
+            status: approved.status,
+        });
 
         // If this is a telemedicine appointment, create a session in telemedicine service
         if (approved.is_telemedicine) {
