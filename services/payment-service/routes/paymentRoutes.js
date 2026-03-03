@@ -1,13 +1,26 @@
 const express = require('express');
 const router = express.Router();
-const {insertPayment, handleStripeWebhook} = require('../controllers/paymentController');
+const { authMiddleware } = require('../middlewares/authMiddleware');
+const {insertPayment, getAllPayments, getUserPayments, getPayment, 
+    fetchPaymentByAppointmentId, handleStripeWebhook, fetchPaymentsByStatus, removePayment} = require('../controllers/paymentController');
 
-// router.get('/', paymentController.getPayments);
-// router.get('/:id', paymentController.getPaymentById);
-// router.post('/', paymentController.createPayment);
+// Payment Controller
 
-router.post('/webhook', handleStripeWebhook);
-router.post('/insertPayment', insertPayment);
+// Post requests
+router.post('/insertPayment', authMiddleware, insertPayment);
+
+// Get requests
+router.get('/getPayments', getAllPayments); 
+router.get('/getUserPayments', authMiddleware, getUserPayments);
+router.get('/getPayment/:id', authMiddleware, getPayment);
+router.get('/getAppointmentPayment', fetchPaymentByAppointmentId);
+router.get('/filterByStatus', fetchPaymentsByStatus);
+
+// Delete requests
+router.delete('/deletePayment/:id', authMiddleware, removePayment);
+
+// Webhook Controllers
+router.post('/webhook', authMiddleware, handleStripeWebhook);
 // router.post('/webhook/payhere', paymentController.handlePayHereWebhook);
 
 module.exports = router;

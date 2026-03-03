@@ -1,9 +1,12 @@
-const {createPayment, updatePaymentStatus} = require('../services/paymentService');
+const {createPayment, updatePaymentStatus, getPayments, getPaymentsByUserId, getPaymentById, 
+    getPaymentByAppointmentId, getPaymentsByStatus, deletePayment} = require('../services/paymentService');
 const stripe = require('../config/stripe');
 
+// Payment Initiate
 exports.insertPayment = async (req, res) => {
     try {
-        const { amount, appointment_id, patient_id } = req.body;
+        const patient_id = req.user.userId;
+        const { amount, appointment_id } = req.body;
 
         const paymentData = { amount, appointment_id, patient_id };
 
@@ -11,7 +14,7 @@ exports.insertPayment = async (req, res) => {
 
         res.status(201).json({ success: true, message: 'Payment initiated', data: result });
     } catch (error) {
-        if(error.message === 'All feilds are required') {
+        if(error.message === 'Amount field is required' || error.message === 'Appointment ID field is required' || error.message === 'Patient ID field is required') {
             res.status(400).json({ success: false, error: error.message });
         }else {
             res.status(500).json({ success: false, error: error.message });
@@ -19,6 +22,7 @@ exports.insertPayment = async (req, res) => {
     }
 };
 
+// Stripe webhook handler
 exports.handleStripeWebhook = async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
@@ -54,42 +58,109 @@ exports.handleStripeWebhook = async (req, res) => {
         }
         res.json({ received: true });
     }catch (error) {
+        if(error.message === 'Payment not found') {
+            console.error('Payment not found for webhook event:', error);
+            return res.status(404).json({ success: false, error: 'Payment not found' });
+        }
         console.error('Error processing webhook event:', error);
         res.status(500).json({ success: false, error: 'Webhook processing error' });
     }
 }
 
+// Get payments
+exports.getAllPayments = async (req, res) => { 
+    try {
+        const payments = await getPayments();
 
-// const getPayments = async (req, res) => {
-//     try {
-//         res.status(200).json({ success: true, message: 'Get all payments', data: [] });
-//     } catch (error) {
-//         res.status(500).json({ success: false, error: error.message });
-//     }
-// };
+        res.status(200).json({ success: true, message: 'Get all payments', data: payments });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
 
-// const getPaymentById = async (req, res) => {
-//     try {
-//         res.status(200).json({ success: true, message: `Get payment ${req.params.id}`, data: null });
-//     } catch (error) {
-//         res.status(500).json({ success: false, error: error.message });
-//     }
-// };
+// Get payments by user id
+exports.getUserPayments = async (req, res) => {
+    try {
+        const patient_id = req.user.userId;
+        const payments = await getPaymentsByUserId(patient_id);
 
-// const createPayment = async (req, res) => {
-//     try {
-//         res.status(201).json({ success: true, message: 'Payment initiated', data: req.body });
-//     } catch (error) {
-//         res.status(500).json({ success: false, error: error.message });
-//     }
-// };
+        res.status(200).json({ success: true, message: 'Get user payments', data: payments });
+    } catch (error) {
+        if(error.message === 'User id required') {
+            res.status(400).json({ success: false, error: error.message });
+        }else if(error.message === 'No payments found for this user') {
+            res.status(404).json({ success: false, error: error.message });
+        } 
+        else {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    }
+};
 
-// const handleWebhook = async (req, res) => {
-//     try {
-//         res.status(200).json({ success: true, message: 'Webhook received' });
-//     } catch (error) {
-//         res.status(500).json({ success: false, error: error.message });
-//     }
-// };
+// Get payment by id
+exports.getPayment = async (req, res) => {
+    try {
+        const { id } = req.params;
 
-// module.exports = { getPayments, getPaymentById, createPayment, handleWebhook };
+        const payment = await getPaymentById(id);
+
+        res.status(200).json({ success: true, message: 'Get all payments', data: payment });
+    } catch (error) {
+        if(error.message === 'Payment not found') {
+            res.status(404).json({ success: false, error: error.message });
+        } else {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    }
+};
+
+// Get payment by appointment id
+exports.fetchPaymentByAppointmentId = async (req, res) => {
+    try {
+        const { appointment_id } = req.query;
+
+        const payment = await getPaymentByAppointmentId(appointment_id);
+
+        res.status(200).json({ success: true, message: 'Get payment by appointment id', data: payment });
+    } catch (error) {
+        if(error.message === 'Payment not found') {
+            res.status(404).json({ success: false, error: error.message });
+        } else {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    }
+}
+
+// Get payments by status
+exports.fetchPaymentsByStatus = async (req, res) => {
+    try {
+        const { status } = req.query;
+
+        const payments = await getPaymentsByStatus(status);
+        res.status(200).json({ success: true, message: 'Get payments by status', data: payments });
+    } catch (error) {
+        if(error.message === 'Status is required') {
+            res.status(400).json({ success: false, error: error.message });
+        } else {   
+            res.status(500).json({ success: false, error: error.message });
+        }
+    }
+}
+
+// Delete payment by id
+exports.removePayment = async (req, res) => {
+    try {
+        const user = req.user;
+        const { id } = req.params;
+
+        const result = await deletePayment(id, user);
+
+        res.status(200).json({ success: true, message: 'Payment deleted successfully', data: result });
+    } catch (error) {
+        if(error.message === 'Payment not found') {
+            res.status(404).json({ success: false, error: error.message });
+        } else {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    }
+};
