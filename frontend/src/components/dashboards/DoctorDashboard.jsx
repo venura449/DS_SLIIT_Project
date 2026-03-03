@@ -1,29 +1,318 @@
-﻿import { useState } from "react";
-import { logoutUser } from "../../utils/authService";
+﻿import { useState, useEffect, useRef } from "react";
+import {
+  logoutUser,
+  getAuthToken,
+  authenticatedFetch,
+} from "../../utils/authService";
+import {
+  submitForVerification,
+  getVerificationDocuments,
+  getVerificationStatus,
+} from "../../utils/verificationService";
+import * as appointmentService from "../../utils/appointmentService";
+import * as telemedicineService from "../../utils/telemedicineService";
+import {
+  getPatientMedicalRecords,
+  getFileUrl,
+} from "../../utils/medicalRecordService";
 import UpdateProfileForm from "../UpdateProfileForm";
+import JitsiMeeting from "../JitsiMeeting";
+import PDFUploader from "../PDFUploader";
+import ScheduleManager from "../ScheduleManager";
+import PrescriptionManager from "../PrescriptionManager";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
+  { id: "appointments", icon: "📆", label: "Appointments" },
   { id: "schedule", icon: "📅", label: "Schedule" },
   { id: "patients", icon: "👥", label: "Patients" },
   { id: "consultations", icon: "💬", label: "Consultations" },
   { id: "prescriptions", icon: "💊", label: "Prescriptions" },
   { id: "verification", icon: "✅", label: "Verification" },
+  { id: "profile", icon: "👤", label: "Profile" },
 ];
 
 const pageTitles = {
   overview: "Overview",
+  appointments: "My Appointments",
   schedule: "Schedule",
   patients: "Patients",
   consultations: "Consultations",
   prescriptions: "Prescriptions",
   verification: "Verification Status",
+  profile: "Doctor Profile",
 };
 
 const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState(initialUser);
+  const [uploadedDocuments, setUploadedDocuments] = useState({});
+  const [uploadError, setUploadError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState(null);
+  const [submittedDocs, setSubmittedDocs] = useState([]);
+  const [loadingVerification, setLoadingVerification] = useState(false);
+
+  // Doctor public profile
+  const [docProfile, setDocProfile] = useState({
+    name: "",
+    specialization: "",
+    consultationFee: "",
+    bio: "",
+  });
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileSuccess, setProfileSuccess] = useState("");
+
+  // Appointments tab
+  const [apptFilter, setApptFilter] = useState("upcoming");
+  const [appointments, setAppointments] = useState([]);
+  const [apptLoading, setApptLoading] = useState(false);
+  const [apptError, setApptError] = useState("");
+  const [chatApptId, setChatApptId] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [approvingId, setApprovingId] = useState(null);
+  const chatEndRef = useRef(null);
+
+  // Telemedicine meeting
+  const [jitsiSession, setJitsiSession] = useState(null);
+  const [fetchingSession, setFetchingSession] = useState(null);
+  const [endingSession, setEndingSession] = useState(null); // appointmentId being ended
+  const [endedSessions, setEndedSessions] = useState(() => {
+    try {
+      const stored = localStorage.getItem("doctorEndedSessions");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  }); // appointmentIds whose sessions are ended
+
+  // Patient medical records panel (per appointment)
+  const [recordsApptId, setRecordsApptId] = useState(null);
+  const [patientRecords, setPatientRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsPatientId, setRecordsPatientId] = useState(null);
+
+  // Load doctor public profile when the profile tab is opened
+  useEffect(() => {
+    if (activeTab !== "profile") return;
+    setProfileLoading(true);
+    setProfileError("");
+    setProfileSuccess("");
+    const API_BASE = import.meta.env.VITE_API_BASE_URL;
+    authenticatedFetch(`${API_BASE}/doctors/api/v1/public/profile`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          const p = data.data;
+          setDocProfile({
+            name: p.name || "",
+            specialization: p.specialization || "",
+            consultationFee:
+              p.consultation_fee != null ? String(p.consultation_fee) : "",
+            bio: p.bio || "",
+          });
+        }
+      })
+      .catch(() => setProfileError("Failed to load profile."))
+      .finally(() => setProfileLoading(false));
+  }, [activeTab]);
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileError("");
+    setProfileSuccess("");
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL;
+      const res = await authenticatedFetch(
+        `${API_BASE}/doctors/api/v1/public/profile`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            name: docProfile.name,
+            specialization: docProfile.specialization,
+            consultationFee: docProfile.consultationFee
+              ? parseFloat(docProfile.consultationFee)
+              : null,
+            bio: docProfile.bio,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (data.success) setProfileSuccess("Profile saved successfully!");
+      else setProfileError(data.message || "Failed to save profile.");
+    } catch {
+      setProfileError("Failed to save profile.");
+    }
+    setProfileSaving(false);
+  };
+
+  useEffect(() => {
+    const loadVerification = async () => {
+      setLoadingVerification(true);
+      const [statusResult, docsResult] = await Promise.all([
+        getVerificationStatus(),
+        getVerificationDocuments(),
+      ]);
+      if (statusResult.success) setVerificationStatus(statusResult.status);
+      if (docsResult.success) setSubmittedDocs(docsResult.documents);
+      setLoadingVerification(false);
+    };
+    loadVerification();
+  }, []);
+
+  // Load appointments when tab or filter changes; also sync ended telemedicine sessions
+  useEffect(() => {
+    if (activeTab !== "appointments") return;
+    setApptLoading(true);
+    setApptError("");
+    Promise.all([
+      appointmentService.getDoctorAppointments(
+        apptFilter === "ended" ? "" : apptFilter,
+      ),
+      telemedicineService.getSessions(),
+    ]).then(([apptRes, teleRes]) => {
+      if (apptRes.success) setAppointments(apptRes.data || []);
+      else setApptError(apptRes.error || "Failed to load appointments");
+      if (teleRes.success && Array.isArray(teleRes.data)) {
+        const teleEndedIds = teleRes.data
+          .filter((s) => s.status === "ended")
+          .map((s) => s.appointment_id);
+        // Merge with localStorage-persisted ended IDs (covers in-person sessions)
+        const stored = (() => {
+          try {
+            return JSON.parse(
+              localStorage.getItem("doctorEndedSessions") || "[]",
+            );
+          } catch {
+            return [];
+          }
+        })();
+        setEndedSessions(new Set([...teleEndedIds, ...stored]));
+      }
+      setApptLoading(false);
+    });
+  }, [activeTab, apptFilter]);
+
+  // Scroll chat to bottom when messages change
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const handleApprove = async (apptId) => {
+    setApprovingId(apptId);
+    const res = await appointmentService.approveAppointment(apptId);
+    if (res.success) {
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === apptId ? { ...a, status: "confirmed" } : a)),
+      );
+    }
+    setApprovingId(null);
+  };
+
+  const handleJoinMeeting = async (appt) => {
+    setFetchingSession(appt.id);
+    const res = await telemedicineService.getSessionByAppointment(appt.id);
+    if (res.success && res.data) {
+      setJitsiSession({
+        roomName: res.data.meeting_room,
+        displayName: `Dr. ${user?.name || "Doctor"}`,
+        sessionId: res.data.id,
+        appointmentId: appt.id,
+      });
+    } else {
+      alert("Meeting room not available yet. Please try again shortly.");
+    }
+    setFetchingSession(null);
+  };
+
+  const handleEndConsultation = async (appt) => {
+    if (
+      !window.confirm(
+        `End consultation with ${appt.patient_name || "this patient"}? The session will be closed and removed from your active list.`,
+      )
+    )
+      return;
+    setEndingSession(appt.id);
+    // For telemedicine appointments, also mark the video session as ended in the DB
+    if (appt.is_telemedicine) {
+      const sessionRes = await telemedicineService.getSessionByAppointment(
+        appt.id,
+      );
+      if (sessionRes.success && sessionRes.data) {
+        await telemedicineService.endSession(sessionRes.data.id);
+      }
+    }
+    // Persist to localStorage so in-person ended state survives page refresh
+    const stored = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("doctorEndedSessions") || "[]");
+      } catch {
+        return [];
+      }
+    })();
+    localStorage.setItem(
+      "doctorEndedSessions",
+      JSON.stringify([...new Set([...stored, appt.id])]),
+    );
+    setEndedSessions((prev) => new Set([...prev, appt.id]));
+    setEndingSession(null);
+  };
+
+  const openChat = async (apptId) => {
+    // Close records panel if open for a different appointment
+    if (recordsApptId && recordsApptId !== apptId) closeRecords();
+    setChatApptId(apptId);
+    setChatMessages([]);
+    const res = await appointmentService.getMessages(apptId);
+    if (res.success) setChatMessages(res.data || []);
+  };
+
+  const closeChat = () => {
+    setChatApptId(null);
+    setChatMessages([]);
+    setChatInput("");
+  };
+
+  const openRecords = async (apptId, patientId) => {
+    // Close chat if open for a different appointment
+    if (chatApptId && chatApptId !== apptId) closeChat();
+    if (recordsApptId === apptId) {
+      closeRecords();
+      return;
+    }
+    setRecordsApptId(apptId);
+    setRecordsPatientId(patientId);
+    setRecordsLoading(true);
+    setPatientRecords([]);
+    const res = await getPatientMedicalRecords(patientId);
+    if (res.success) setPatientRecords(res.data || []);
+    setRecordsLoading(false);
+  };
+
+  const closeRecords = () => {
+    setRecordsApptId(null);
+    setPatientRecords([]);
+    setRecordsPatientId(null);
+  };
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || !chatApptId) return;
+    setChatSending(true);
+    const res = await appointmentService.sendMessage(
+      chatApptId,
+      chatInput.trim(),
+    );
+    if (res.success) {
+      setChatMessages((prev) => [...prev, res.data]);
+      setChatInput("");
+    }
+    setChatSending(false);
+  };
 
   const handleLogout = () => {
     logoutUser();
@@ -32,6 +321,53 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
   const handleProfileUpdate = (updatedUser) => {
     setUser(updatedUser);
+  };
+
+  const handleDocumentUpload = (documentType, uploadResponse) => {
+    if (uploadResponse.success) {
+      setUploadedDocuments((prev) => ({
+        ...prev,
+        [documentType]: uploadResponse,
+      }));
+      setUploadError("");
+    }
+  };
+
+  const handleUploadError = (documentType, error) => {
+    setUploadError(`Error uploading ${documentType}: ${error}`);
+  };
+
+  const handleSubmitForVerification = async () => {
+    const documentCount = Object.keys(uploadedDocuments).length;
+    if (documentCount === 0) {
+      setUploadError("Please upload at least one document before submitting");
+      return;
+    }
+
+    setSubmitting(true);
+    setUploadError("");
+
+    try {
+      const result = await submitForVerification();
+      if (!result.success) {
+        setUploadError(result.error || "Failed to submit for verification");
+        return;
+      }
+
+      // Refresh status and docs from backend
+      const [statusResult, docsResult] = await Promise.all([
+        getVerificationStatus(),
+        getVerificationDocuments(),
+      ]);
+      if (statusResult.success) setVerificationStatus(statusResult.status);
+      if (docsResult.success) setSubmittedDocs(docsResult.documents);
+      setUploadedDocuments({});
+      setUploadError("");
+    } catch (err) {
+      setUploadError(err.message || "Failed to submit for verification");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -414,22 +750,6 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   <h2>Welcome, Dr. {user?.name || "Doctor"} ðŸ‘‹</h2>
                   <p>Here's a summary of your activity today.</p>
                 </div>
-                <div className="dd-alert">
-                  <span className="dd-alert-icon">⚙️</span>
-                  Your account is <strong>pending verification</strong>. Submit
-                  your documents to activate all features.
-                  <button
-                    className="dd-btn dd-btn-primary"
-                    style={{
-                      marginLeft: "auto",
-                      padding: "5px 12px",
-                      fontSize: "12px",
-                    }}
-                    onClick={() => setActiveTab("verification")}
-                  >
-                    Complete Now
-                  </button>
-                </div>
                 <div className="dd-stats">
                   <div className="dd-stat">
                     <div className="dd-stat-top">
@@ -461,25 +781,12 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
             {activeTab === "schedule" && (
               <>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "18px",
-                  }}
-                >
-                  <div className="dd-page-head" style={{ marginBottom: 0 }}>
-                    <h2>Schedule</h2>
-                    <p>Manage your working hours and availability.</p>
-                  </div>
-                  <button className="dd-btn dd-btn-primary">+ Add Slot</button>
+                <div className="dd-page-head">
+                  <h2>Schedule</h2>
+                  <p>Manage your working hours and availability.</p>
                 </div>
                 <div className="dd-section">
-                  <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ“…</div>
-                    <p>No schedule set. Add your available time slots.</p>
-                  </div>
+                  <ScheduleManager />
                 </div>
               </>
             )}
@@ -508,7 +815,22 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                 <div className="dd-section">
                   <div className="dd-empty">
                     <div className="dd-empty-icon">ðŸ’¬</div>
-                    <p>No active consultations at this time.</p>
+                    <p>
+                      Go to the <strong>Appointments</strong> tab and click the{" "}
+                      <span
+                        style={{
+                          background: "#dcfce7",
+                          color: "#15803d",
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          fontWeight: 700,
+                        }}
+                      >
+                        📹 Join
+                      </span>{" "}
+                      button on a confirmed telemedicine appointment to start a
+                      video session.
+                    </p>
                   </div>
                 </div>
               </>
@@ -516,28 +838,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
             {activeTab === "prescriptions" && (
               <>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "18px",
-                  }}
-                >
-                  <div className="dd-page-head" style={{ marginBottom: 0 }}>
-                    <h2>Prescriptions</h2>
-                    <p>Issue and manage patient prescriptions.</p>
-                  </div>
-                  <button className="dd-btn dd-btn-primary">
-                    + New Prescription
-                  </button>
+                <div className="dd-page-head">
+                  <h2>Prescriptions</h2>
+                  <p>
+                    Issue prescriptions for confirmed appointments. Drugs
+                    suggested via RxNorm.
+                  </p>
                 </div>
-                <div className="dd-section">
-                  <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ’Š</div>
-                    <p>No prescriptions issued yet.</p>
-                  </div>
-                </div>
+                <PrescriptionManager />
               </>
             )}
 
@@ -549,55 +857,1126 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                     Submit your credentials to activate your doctor account.
                   </p>
                 </div>
-                <div className="dd-section">
-                  <div className="dd-section-title">
-                    ðŸ“‹ Required Documents
-                  </div>
-                  <ul className="dd-checklist">
-                    <li>
-                      <span className="dd-check-dot" /> Medical License (PDF /
-                      JPG)
-                    </li>
-                    <li>
-                      <span className="dd-check-dot" /> Government-issued ID
-                    </li>
-                    <li>
-                      <span className="dd-check-dot" /> Professional Credentials
-                    </li>
-                    <li>
-                      <span className="dd-check-dot" /> Insurance Certificate
-                    </li>
-                  </ul>
-                  <button className="dd-btn dd-btn-primary">
-                    Upload Documents
-                  </button>
-                </div>
-                <div className="dd-section">
-                  <div className="dd-section-title">ðŸ“Œ Current Status</div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    <span
+                {(!verificationStatus ||
+                  verificationStatus.status === "pending" ||
+                  verificationStatus.status === "no_documents" ||
+                  verificationStatus.status === "rejected") && (
+                  <div className="dd-section">
+                    <div className="dd-section-title">
+                      📋 Required Documents
+                    </div>
+                    <p
                       style={{
-                        background: "#fffbeb",
-                        border: "1px solid #fcd34d",
-                        color: "#92400e",
-                        padding: "4px 12px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        fontWeight: 600,
+                        fontSize: "13px",
+                        color: "#7a8fa6",
+                        marginBottom: "18px",
+                        lineHeight: "1.5",
                       }}
                     >
-                      â³ Pending Review
-                    </span>
-                    <span style={{ fontSize: "13px", color: "#7a8fa6" }}>
-                      Submitted documents are under review by our team.
-                    </span>
+                      Please upload all required documents in PDF format. Each
+                      file should not exceed 25MB. Your documents will be
+                      securely stored and reviewed by our verification team.
+                    </p>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "20px",
+                      }}
+                    >
+                      <div>
+                        <PDFUploader
+                          label="Medical License"
+                          documentType="license"
+                          token={getAuthToken()}
+                          onSuccess={(response) =>
+                            handleDocumentUpload("license", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Medical License", error)
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <PDFUploader
+                          label="Government-issued ID"
+                          documentType="government_id"
+                          token={getAuthToken()}
+                          onSuccess={(response) =>
+                            handleDocumentUpload("government_id", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Government ID", error)
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <PDFUploader
+                          label="Professional Credentials"
+                          documentType="credentials"
+                          token={getAuthToken()}
+                          onSuccess={(response) =>
+                            handleDocumentUpload("credentials", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Credentials", error)
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <PDFUploader
+                          label="Insurance Certificate"
+                          documentType="insurance"
+                          token={getAuthToken()}
+                          onSuccess={(response) =>
+                            handleDocumentUpload("insurance", response)
+                          }
+                          onError={(error) =>
+                            handleUploadError("Insurance Certificate", error)
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    {uploadError && (
+                      <div
+                        style={{
+                          marginTop: "16px",
+                          padding: "10px 14px",
+                          background: "#fef2f2",
+                          border: "1px solid #fecaca",
+                          borderRadius: "8px",
+                          fontSize: "13px",
+                          color: "#dc2626",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>⚠️</span>
+                        {uploadError}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: "20px" }}>
+                      <button
+                        className="dd-btn dd-btn-primary"
+                        onClick={handleSubmitForVerification}
+                        disabled={
+                          submitting ||
+                          Object.keys(uploadedDocuments).length === 0
+                        }
+                      >
+                        {submitting ? (
+                          <>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                width: "14px",
+                                height: "14px",
+                                border: "2px solid rgba(255, 255, 255, 0.3)",
+                                borderTopColor: "#fff",
+                                borderRadius: "50%",
+                                animation: "spin 0.6s linear infinite",
+                                marginRight: "6px",
+                              }}
+                            ></span>
+                            Submitting...
+                          </>
+                        ) : Object.keys(uploadedDocuments).length > 0 ? (
+                          "✓ Documents Uploaded - Submit for Review"
+                        ) : (
+                          "Upload Documents First"
+                        )}
+                      </button>
+                    </div>
                   </div>
+                )}
+                <div className="dd-section">
+                  <div className="dd-section-title">✅ Current Status</div>
+                  {loadingVerification ? (
+                    <div style={{ fontSize: "13px", color: "#7a8fa6" }}>
+                      Loading status…
+                    </div>
+                  ) : verificationStatus ? (
+                    <>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {verificationStatus.status === "approved" && (
+                          <span
+                            style={{
+                              background: "#f0fdf4",
+                              border: "1px solid #86efac",
+                              color: "#15803d",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ✓ Approved
+                          </span>
+                        )}
+                        {verificationStatus.status ===
+                          "submitted_for_review" && (
+                          <span
+                            style={{
+                              background: "#eff6ff",
+                              border: "1px solid #93c5fd",
+                              color: "#1d4ed8",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            🔍 Under Review
+                          </span>
+                        )}
+                        {verificationStatus.status === "rejected" && (
+                          <span
+                            style={{
+                              background: "#fff1f1",
+                              border: "1px solid #fca5a5",
+                              color: "#dc2626",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ✕ Rejected
+                          </span>
+                        )}
+                        {(verificationStatus.status === "pending" ||
+                          verificationStatus.status === "no_documents") && (
+                          <span
+                            style={{
+                              background: "#fffbeb",
+                              border: "1px solid #fcd34d",
+                              color: "#92400e",
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ⏳ Pending Submission
+                          </span>
+                        )}
+                        <span style={{ fontSize: "13px", color: "#7a8fa6" }}>
+                          {verificationStatus.documentsSubmitted} of{" "}
+                          {verificationStatus.totalRequired} documents submitted
+                        </span>
+                      </div>
+                      {verificationStatus.status === "rejected" &&
+                        verificationStatus.rejectionReason && (
+                          <div
+                            style={{
+                              marginTop: "10px",
+                              padding: "10px 14px",
+                              background: "#fff1f1",
+                              border: "1px solid #fca5a5",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              color: "#dc2626",
+                            }}
+                          >
+                            <strong>Rejection reason:</strong>{" "}
+                            {verificationStatus.rejectionReason}
+                          </div>
+                        )}
+                    </>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          background: "#fffbeb",
+                          border: "1px solid #fcd34d",
+                          color: "#92400e",
+                          padding: "4px 12px",
+                          borderRadius: "20px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        ⏳ Pending Submission
+                      </span>
+                      <span style={{ fontSize: "13px", color: "#7a8fa6" }}>
+                        Upload and submit your documents to begin verification.
+                      </span>
+                    </div>
+                  )}
+
+                  {submittedDocs.length > 0 && (
+                    <div style={{ marginTop: "16px" }}>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#3a5068",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.4px",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        Submitted Documents
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fill, minmax(200px, 1fr))",
+                          gap: "10px",
+                        }}
+                      >
+                        {submittedDocs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            style={{
+                              background: "#f8fafc",
+                              border: "1px solid #e4eaf0",
+                              borderRadius: "8px",
+                              padding: "10px 12px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                                color: "#0a3d62",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              {doc.documentType === "license" &&
+                                "Medical License"}
+                              {doc.documentType === "government_id" &&
+                                "Government ID"}
+                              {doc.documentType === "credentials" &&
+                                "Professional Credentials"}
+                              {doc.documentType === "insurance" &&
+                                "Insurance Certificate"}
+                              {![
+                                "license",
+                                "government_id",
+                                "credentials",
+                                "insurance",
+                              ].includes(doc.documentType) && doc.documentType}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#3a5068",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {doc.fileName}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                color: "#b0bec8",
+                                marginTop: "2px",
+                              }}
+                            >
+                              {new Date(
+                                doc.savedAt || doc.uploadedAt,
+                              ).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </div>
+                            <a
+                              href={`${import.meta.env.VITE_API_BASE_URL}/doctors${doc.documentUrl}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                marginTop: "6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                padding: "3px 9px",
+                                borderRadius: "5px",
+                                background: "#eff6ff",
+                                color: "#1d4ed8",
+                                fontSize: "11.5px",
+                                fontWeight: 600,
+                                textDecoration: "none",
+                                border: "1px solid #93c5fd",
+                              }}
+                            >
+                              📄 View PDF
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {Object.keys(uploadedDocuments).length > 0 && (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "12px 14px",
+                        background: "#f0fdf4",
+                        border: "1px solid #bbf7d0",
+                        borderRadius: "8px",
+                        fontSize: "13px",
+                        color: "#166534",
+                      }}
+                    >
+                      <strong>{Object.keys(uploadedDocuments).length}</strong>{" "}
+                      new document
+                      {Object.keys(uploadedDocuments).length !== 1
+                        ? "s"
+                        : ""}{" "}
+                      ready to submit
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ══════════ APPOINTMENTS TAB ══════════════════════════════ */}
+            {activeTab === "appointments" && (
+              <>
+                <style>{`
+                  .da-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
+                  .da-fbtn { padding:6px 16px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; }
+                  .da-fbtn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
+                  .da-card { background:#fff; border:1.5px solid #e4eaf0; border-radius:12px; margin-bottom:12px; overflow:hidden; }
+                  .da-card-header { display:flex; align-items:center; gap:14px; padding:14px 18px; cursor:pointer; }
+                  .da-avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#1a6fa0,#3b9ed9); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; flex-shrink:0; }
+                  .da-card-info { flex:1; min-width:0; }
+                  .da-patient-name { font-size:15px; font-weight:700; color:#1a3a52; }
+                  .da-appt-time { font-size:12px; color:#7a8fa6; margin-top:2px; }
+                  .da-reason { font-size:12px; color:#5a7a95; margin-top:3px; font-style:italic; }
+                  .da-badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:10px; white-space:nowrap; }
+                  .da-badge.pending { background:#fef9c3; color:#a16207; border:1px solid #fde047; }
+                  .da-badge.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+                  .da-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
+                  .da-badge.ended { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+                  .da-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; }
+                  .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-approve-btn:disabled { opacity:.5; cursor:default; }
+                  .da-join-btn { padding:6px 14px; border-radius:8px; border:none; background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; font-size:12px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; }
+                  .da-join-btn:disabled { opacity:.6; cursor:default; }
+                  .da-end-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #dc2626; background:#fff; color:#dc2626; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-end-btn:disabled { opacity:.5; cursor:default; }
+                  .da-tele-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:8px; background:#f0fdf4; border:1px solid #86efac; color:#15803d; font-size:10.5px; font-weight:700; margin-left:6px; }
+                  .da-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-chat-panel { border-top:1.5px solid #e4eaf0; background:#f8fafc; }
+                  .da-chat-messages { max-height:240px; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:8px; }
+                  .da-msg { max-width:72%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.45; }
+                  .da-msg.doctor { align-self:flex-end; background:#1a6fa0; color:#fff; border-bottom-right-radius:4px; }
+                  .da-msg.patient { align-self:flex-start; background:#fff; color:#1a3a52; border:1px solid #e4eaf0; border-bottom-left-radius:4px; }
+                  .da-msg-meta { font-size:10px; margin-top:3px; opacity:.7; }
+                  .da-chat-input { display:flex; gap:8px; padding:10px 14px; border-top:1px solid #e4eaf0; }
+                  .da-chat-input textarea { flex:1; border:1.5px solid #e4eaf0; border-radius:8px; padding:8px 10px; font-size:13px; font-family:'DM Sans',sans-serif; resize:none; outline:none; background:#fff; color:#1a3a52; color-scheme:light; }
+                  .da-send-btn { padding:8px 18px; border-radius:8px; border:none; background:#1a6fa0; color:#fff; font-size:13px; font-weight:700; cursor:pointer; }
+                  .da-send-btn:disabled { opacity:.5; cursor:default; }
+                  .da-empty { text-align:center; padding:40px; color:#7a8fa6; font-size:14px; }
+                  .da-section-label { font-size:11px; font-weight:700; color:#7a8fa6; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 12px; }
+                  .da-records-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #7c3aed; background:#fff; color:#7c3aed; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-records-panel { border-top:1.5px solid #e4eaf0; background:#faf5ff; padding:16px 18px; }
+                  .da-records-panel-title { font-family:'Sora',sans-serif; font-size:13px; font-weight:700; color:#4c1d95; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
+                  .da-rec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+                  .da-rec-card { background:#fff; border:1.5px solid #e9d5ff; border-radius:10px; overflow:hidden; }
+                  .da-rec-banner { height:4px; }
+                  .da-rec-body { padding:10px 12px 8px; }
+                  .da-rec-cat { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; border:1px solid; font-size:10px; font-weight:700; margin-bottom:6px; }
+                  .da-rec-title { font-size:13px; font-weight:700; color:#1a3a52; margin-bottom:4px; line-height:1.3; }
+                  .da-rec-desc { font-size:11.5px; color:#56687a; margin-bottom:5px; line-height:1.4; }
+                  .da-rec-meta { font-size:11px; color:#94a3b8; }
+                  .da-rec-footer { padding:8px 12px; border-top:1px solid #f1f5f9; }
+                  .da-rec-view { display:flex; align-items:center; justify-content:center; gap:4px; padding:5px 0; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-size:11.5px; font-weight:700; text-decoration:none; transition:all .15s; }
+                  .da-rec-view:hover { background:#dbeafe; }
+                  .da-rec-empty { text-align:center; padding:20px; color:#7a8fa6; font-size:13px; }
+                `}</style>
+                <div className="dd-page-head">
+                  <h2>My Appointments</h2>
+                  <p>
+                    Review, approve, and chat with patients about their
+                    bookings.
+                  </p>
+                </div>
+
+                {/* Filter tabs */}
+                <div className="da-toolbar">
+                  {[
+                    { key: "today", label: "Today" },
+                    { key: "upcoming", label: "Upcoming" },
+                    { key: "", label: "All" },
+                    { key: "ended", label: "⏹ Ended" },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      className={`da-fbtn${apptFilter === key ? " active" : ""}`}
+                      onClick={() => setApptFilter(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "#7a8fa6",
+                      marginLeft: "auto",
+                    }}
+                  >
+                    {
+                      (apptFilter === "ended"
+                        ? appointments.filter((a) => endedSessions.has(a.id))
+                        : appointments
+                      ).length
+                    }{" "}
+                    appointment
+                    {(apptFilter === "ended"
+                      ? appointments.filter((a) => endedSessions.has(a.id))
+                      : appointments
+                    ).length !== 1
+                      ? "s"
+                      : ""}
+                  </span>
+                </div>
+
+                {apptLoading ? (
+                  <div className="da-empty">Loading…</div>
+                ) : apptError ? (
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      background: "#fee2e2",
+                      color: "#991b1b",
+                      borderRadius: 8,
+                      marginBottom: 12,
+                    }}
+                  >
+                    {apptError}
+                  </div>
+                ) : (apptFilter === "ended"
+                    ? appointments.filter((a) => endedSessions.has(a.id))
+                    : appointments
+                  ).length === 0 ? (
+                  <div className="da-empty">No appointments found.</div>
+                ) : (
+                  (apptFilter === "ended"
+                    ? appointments.filter((a) => endedSessions.has(a.id))
+                    : appointments
+                  ).map((appt) => {
+                    const initials = appt.patient_name
+                      ? appt.patient_name
+                          .split(" ")
+                          .map((w) => w[0])
+                          .join("")
+                          .toUpperCase()
+                          .slice(0, 2)
+                      : "P";
+                    const dateStr = new Date(
+                      appt.appointment_date,
+                    ).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    });
+                    const fmt12 = (t) => {
+                      if (!t) return "";
+                      const [h, m] = t.split(":").map(Number);
+                      const ampm = h < 12 ? "AM" : "PM";
+                      return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+                    };
+                    const isChatOpen = chatApptId === appt.id;
+                    return (
+                      <div className="da-card" key={appt.id}>
+                        <div
+                          className="da-card-header"
+                          onClick={() =>
+                            isChatOpen ? closeChat() : openChat(appt.id)
+                          }
+                        >
+                          <div className="da-avatar">{initials}</div>
+                          <div className="da-card-info">
+                            <div className="da-patient-name">
+                              {appt.patient_name || "Patient"}
+                              {appt.is_telemedicine && (
+                                <span className="da-tele-badge">
+                                  📹 Telemedicine
+                                </span>
+                              )}
+                            </div>
+                            <div className="da-appt-time">
+                              {dateStr} &nbsp;·&nbsp; {fmt12(appt.start_time)} –{" "}
+                              {fmt12(appt.end_time)}
+                            </div>
+                            {appt.reason && (
+                              <div className="da-reason">"{appt.reason}"</div>
+                            )}
+                          </div>
+                          <div
+                            className="da-actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span
+                              className={`da-badge ${endedSessions.has(appt.id) ? "ended" : appt.status}`}
+                            >
+                              {endedSessions.has(appt.id)
+                                ? "⏹ Ended"
+                                : appt.status === "pending"
+                                  ? "⏳ Pending"
+                                  : appt.status === "confirmed"
+                                    ? "✅ Confirmed"
+                                    : "✔ Completed"}
+                            </span>
+                            {appt.status === "pending" && (
+                              <button
+                                className="da-approve-btn"
+                                disabled={approvingId === appt.id}
+                                onClick={() => handleApprove(appt.id)}
+                              >
+                                {approvingId === appt.id ? "…" : "Approve"}
+                              </button>
+                            )}
+                            {!!appt.is_telemedicine &&
+                              appt.status === "confirmed" &&
+                              !endedSessions.has(appt.id) && (
+                                <button
+                                  className="da-join-btn"
+                                  disabled={fetchingSession === appt.id}
+                                  onClick={() => handleJoinMeeting(appt)}
+                                >
+                                  {fetchingSession === appt.id
+                                    ? "…"
+                                    : "📹 Join"}
+                                </button>
+                              )}
+                            {appt.status === "confirmed" &&
+                              !endedSessions.has(appt.id) && (
+                                <button
+                                  className="da-end-btn"
+                                  disabled={endingSession === appt.id}
+                                  onClick={() => handleEndConsultation(appt)}
+                                >
+                                  {endingSession === appt.id ? "…" : "⏹ End"}
+                                </button>
+                              )}
+                            <button
+                              className="da-records-btn"
+                              onClick={() =>
+                                openRecords(appt.id, appt.patient_id)
+                              }
+                            >
+                              {recordsApptId === appt.id
+                                ? "🗂 Close"
+                                : "🗂 Records"}
+                            </button>
+                            {!endedSessions.has(appt.id) && (
+                              <button
+                                className="da-chat-btn"
+                                onClick={() =>
+                                  isChatOpen ? closeChat() : openChat(appt.id)
+                                }
+                              >
+                                {isChatOpen ? "Close" : "💬 Chat"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Inline chat panel */}
+                        {isChatOpen && (
+                          <div className="da-chat-panel">
+                            <div className="da-chat-messages">
+                              {chatMessages.length === 0 && (
+                                <div
+                                  style={{
+                                    textAlign: "center",
+                                    color: "#7a8fa6",
+                                    fontSize: 13,
+                                    padding: "12px 0",
+                                  }}
+                                >
+                                  No messages yet. Start the conversation.
+                                </div>
+                              )}
+                              {chatMessages.map((msg) => (
+                                <div
+                                  key={msg.id}
+                                  className={`da-msg ${msg.sender_role}`}
+                                >
+                                  {msg.message}
+                                  <div className="da-msg-meta">
+                                    {msg.sender_role === "doctor"
+                                      ? "You"
+                                      : appt.patient_name || "Patient"}
+                                    &nbsp;·&nbsp;
+                                    {new Date(msg.sent_at).toLocaleTimeString(
+                                      "en-US",
+                                      { hour: "2-digit", minute: "2-digit" },
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                              <div ref={chatEndRef} />
+                            </div>
+                            <div className="da-chat-input">
+                              <textarea
+                                rows={2}
+                                placeholder="Type a message…"
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSendMessage();
+                                  }
+                                }}
+                              />
+                              <button
+                                className="da-send-btn"
+                                disabled={chatSending || !chatInput.trim()}
+                                onClick={handleSendMessage}
+                              >
+                                Send
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {recordsApptId === appt.id && (
+                          <div className="da-records-panel">
+                            <div className="da-records-panel-title">
+                              🗂 {appt.patient_name || "Patient"}&apos;s Medical
+                              Records
+                            </div>
+                            {recordsLoading ? (
+                              <div className="da-rec-empty">
+                                Loading records…
+                              </div>
+                            ) : patientRecords.length === 0 ? (
+                              <div className="da-rec-empty">
+                                No medical records uploaded by this patient yet.
+                              </div>
+                            ) : (
+                              <div className="da-rec-grid">
+                                {patientRecords.map((rec) => {
+                                  const CATEGORIES = [
+                                    {
+                                      value: "lab_report",
+                                      label: "Lab Report",
+                                      icon: "🧪",
+                                      color: "#eff6ff",
+                                      text: "#1d4ed8",
+                                      border: "#93c5fd",
+                                    },
+                                    {
+                                      value: "imaging",
+                                      label: "Imaging / Scan",
+                                      icon: "🩻",
+                                      color: "#faf5ff",
+                                      text: "#7c3aed",
+                                      border: "#c4b5fd",
+                                    },
+                                    {
+                                      value: "prescription",
+                                      label: "Prescription",
+                                      icon: "💊",
+                                      color: "#f0fdf4",
+                                      text: "#15803d",
+                                      border: "#86efac",
+                                    },
+                                    {
+                                      value: "discharge_summary",
+                                      label: "Discharge Summary",
+                                      icon: "🏥",
+                                      color: "#fff7ed",
+                                      text: "#c2410c",
+                                      border: "#fdba74",
+                                    },
+                                    {
+                                      value: "other",
+                                      label: "Other",
+                                      icon: "📄",
+                                      color: "#f8fafc",
+                                      text: "#475569",
+                                      border: "#cbd5e1",
+                                    },
+                                  ];
+                                  const cat =
+                                    CATEGORIES.find(
+                                      (c) => c.value === rec.category,
+                                    ) || CATEGORIES[4];
+                                  return (
+                                    <div className="da-rec-card" key={rec.id}>
+                                      <div
+                                        className="da-rec-banner"
+                                        style={{ background: cat.border }}
+                                      />
+                                      <div className="da-rec-body">
+                                        <div
+                                          className="da-rec-cat"
+                                          style={{
+                                            background: cat.color,
+                                            color: cat.text,
+                                            borderColor: cat.border,
+                                          }}
+                                        >
+                                          {cat.icon} {cat.label}
+                                        </div>
+                                        <div className="da-rec-title">
+                                          {rec.title}
+                                        </div>
+                                        {rec.description && (
+                                          <div className="da-rec-desc">
+                                            {rec.description}
+                                          </div>
+                                        )}
+                                        <div className="da-rec-meta">
+                                          {new Date(
+                                            rec.uploaded_at,
+                                          ).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                          })}
+                                          {rec.file_size
+                                            ? ` · ${(rec.file_size / 1024 / 1024).toFixed(2)} MB`
+                                            : ""}
+                                          {rec.file_name
+                                            ? ` · ${rec.file_name}`
+                                            : ""}
+                                        </div>
+                                      </div>
+                                      <div className="da-rec-footer">
+                                        <a
+                                          className="da-rec-view"
+                                          href={getFileUrl(rec.file_url)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          👁 View / Download
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </>
+            )}
+
+            {activeTab === "profile" && (
+              <>
+                <div className="dd-page-head">
+                  <h2>Doctor Profile</h2>
+                  <p>
+                    This information is shown to patients when they browse and
+                    book appointments.
+                  </p>
+                </div>
+                <div className="dd-section" style={{ maxWidth: 560 }}>
+                  {profileLoading ? (
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        color: "#7a8fa6",
+                        padding: "12px 0",
+                      }}
+                    >
+                      Loading profile…
+                    </div>
+                  ) : (
+                    <>
+                      {profileSuccess && (
+                        <div
+                          style={{
+                            marginBottom: 16,
+                            padding: "10px 14px",
+                            background: "#f0fdf4",
+                            border: "1px solid #86efac",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            color: "#15803d",
+                          }}
+                        >
+                          ✓ {profileSuccess}
+                        </div>
+                      )}
+                      {profileError && (
+                        <div
+                          style={{
+                            marginBottom: 16,
+                            padding: "10px 14px",
+                            background: "#fff1f1",
+                            border: "1px solid #fca5a5",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            color: "#dc2626",
+                          }}
+                        >
+                          ⚠ {profileError}
+                        </div>
+                      )}
+
+                      {/* Name */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Full Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. John Smith"
+                          value={docProfile.name}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              name: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: "#1a3a52",
+                            background: "#fff",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      {/* Specialization */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Specialization
+                        </label>
+                        <select
+                          value={docProfile.specialization}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              specialization: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: docProfile.specialization
+                              ? "#1a3a52"
+                              : "#7a8fa6",
+                            background: "#fff",
+                            boxSizing: "border-box",
+                            appearance: "auto",
+                          }}
+                        >
+                          <option value="">— Select specialization —</option>
+                          <option value="General Practice">
+                            General Practice
+                          </option>
+                          <option value="Internal Medicine">
+                            Internal Medicine
+                          </option>
+                          <option value="Cardiology">Cardiology</option>
+                          <option value="Dermatology">Dermatology</option>
+                          <option value="Endocrinology">Endocrinology</option>
+                          <option value="Gastroenterology">
+                            Gastroenterology
+                          </option>
+                          <option value="Geriatrics">Geriatrics</option>
+                          <option value="Hematology">Hematology</option>
+                          <option value="Infectious Disease">
+                            Infectious Disease
+                          </option>
+                          <option value="Nephrology">Nephrology</option>
+                          <option value="Neurology">Neurology</option>
+                          <option value="Oncology">Oncology</option>
+                          <option value="Ophthalmology">Ophthalmology</option>
+                          <option value="Orthopedics">Orthopedics</option>
+                          <option value="Otolaryngology (ENT)">
+                            Otolaryngology (ENT)
+                          </option>
+                          <option value="Pediatrics">Pediatrics</option>
+                          <option value="Psychiatry">Psychiatry</option>
+                          <option value="Pulmonology">Pulmonology</option>
+                          <option value="Radiology">Radiology</option>
+                          <option value="Rheumatology">Rheumatology</option>
+                          <option value="Surgery (General)">
+                            Surgery (General)
+                          </option>
+                          <option value="Surgery (Cardiothoracic)">
+                            Surgery (Cardiothoracic)
+                          </option>
+                          <option value="Surgery (Neurosurgery)">
+                            Surgery (Neurosurgery)
+                          </option>
+                          <option value="Surgery (Plastic)">
+                            Surgery (Plastic)
+                          </option>
+                          <option value="Surgery (Vascular)">
+                            Surgery (Vascular)
+                          </option>
+                          <option value="Urology">Urology</option>
+                          <option value="Obstetrics & Gynecology">
+                            Obstetrics &amp; Gynecology
+                          </option>
+                          <option value="Anesthesiology">Anesthesiology</option>
+                          <option value="Emergency Medicine">
+                            Emergency Medicine
+                          </option>
+                          <option value="Family Medicine">
+                            Family Medicine
+                          </option>
+                          <option value="Pathology">Pathology</option>
+                          <option value="Physical Medicine & Rehabilitation">
+                            Physical Medicine &amp; Rehabilitation
+                          </option>
+                          <option value="Sports Medicine">
+                            Sports Medicine
+                          </option>
+                        </select>
+                      </div>
+
+                      {/* Consultation fee */}
+                      <div style={{ marginBottom: 16 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Consultation Fee (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="e.g. 50.00"
+                          value={docProfile.consultationFee}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              consultationFee: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: "#1a3a52",
+                            background: "#fff",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      {/* Bio */}
+                      <div style={{ marginBottom: 20 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#3a5068",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 6,
+                          }}
+                        >
+                          Short Bio
+                        </label>
+                        <textarea
+                          rows={4}
+                          placeholder="Tell patients about your experience and approach…"
+                          value={docProfile.bio}
+                          onChange={(e) =>
+                            setDocProfile((p) => ({
+                              ...p,
+                              bio: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "9px 12px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: "'DM Sans', sans-serif",
+                            color: "#1a3a52",
+                            background: "#fff",
+                            resize: "vertical",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <button
+                        className="dd-btn dd-btn-primary"
+                        onClick={handleSaveProfile}
+                        disabled={profileSaving}
+                      >
+                        {profileSaving ? "Saving…" : "Save Profile"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -610,6 +1989,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           user={user}
           onClose={() => setShowProfile(false)}
           onSuccess={handleProfileUpdate}
+        />
+      )}
+
+      {jitsiSession && (
+        <JitsiMeeting
+          roomName={jitsiSession.roomName}
+          displayName={jitsiSession.displayName}
+          onClose={() => setJitsiSession(null)}
         />
       )}
     </>

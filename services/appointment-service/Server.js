@@ -2,6 +2,9 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const { initializeDatabase } = require('./config/postgres');
+const { initializeProducer, disconnectProducer } = require('./config/kafka');
+const { startReminderScheduler } = require('./services/reminderScheduler');
 
 // Load environment variables
 dotenv.config();
@@ -16,7 +19,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const appointmentRoutes = require('./routes/appointmentRoutes');
-app.use('/api/appointments', appointmentRoutes);
+const prescriptionRoutes = require('./routes/prescriptionRoutes');
+app.use('/api/v1/appointments', appointmentRoutes);
+app.use('/api/v1/prescriptions', prescriptionRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -36,8 +41,26 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3004;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`Appointment Service running on port ${PORT}`);
+    try {
+        await initializeDatabase();
+        console.log('Database initialized successfully');
+        await initializeProducer();
+        startReminderScheduler();
+    } catch (error) {
+        console.error('Failed to initialize services:', error);
+        process.exit(1);
+    }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(async () => {
+        await disconnectProducer();
+        process.exit(0);
+    });
 });
 
 module.exports = server;

@@ -12,8 +12,17 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Skip body parsing for multipart routes (file uploads) so the stream passes through intact
+const bodyParserExclusions = (req, res, next) => {
+    const isMultipart = req.headers['content-type'] && req.headers['content-type'].startsWith('multipart/form-data');
+    if (isMultipart) return next();
+    express.json()(req, res, (err) => {
+        if (err) return next(err);
+        express.urlencoded({ extended: true })(req, res, next);
+    });
+};
+app.use(bodyParserExclusions);
 
 // Service Routes
 app.use('/auth', httpProxy(process.env.AUTH_SERVICE_URL || 'http://localhost:3001'));

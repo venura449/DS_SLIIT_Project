@@ -2,6 +2,8 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
+const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
 dotenv.config();
@@ -14,9 +16,19 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve static files for uploaded documents
+const uploadsDir = process.env.UPLOAD_DIR || '/uploads/doctor-verification';
+app.use('/uploads/doctor-verification', express.static(uploadsDir));
+
 // Routes
 const doctorRoutes = require('./routes/doctorRoutes');
+const verificationRoutes = require('./routes/verificationRoutes');
+const scheduleRoutes = require('./routes/scheduleRoutes');
+const publicDoctorRoutes = require('./routes/publicDoctorRoutes');
 app.use('/api/doctors', doctorRoutes);
+app.use('/api/v1/verification', verificationRoutes);
+app.use('/api/v1/schedule', scheduleRoutes);
+app.use('/api/v1/public', publicDoctorRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -36,8 +48,15 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3003;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`Doctor Service running on port ${PORT}`);
+    try {
+        await initializeDatabase();
+        console.log('Database initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize database:', error);
+        process.exit(1);
+    }
 });
 
 module.exports = server;

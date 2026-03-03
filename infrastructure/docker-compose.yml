@@ -74,10 +74,15 @@ services:
       DB_NAME: patient_db
       DB_USER: admin
       DB_PASSWORD: password
+      JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      DOCTOR_SERVICE_URL: http://doctor-service:3003
+      UPLOAD_BASE: /app/uploads
+      UPLOAD_DIR: /app/uploads/medical-records
     depends_on:
       - postgres-patient
+      - doctor-service
     volumes:
-      - ../services/patient-service/uploads:/app/uploads
+      - patient_uploads:/app/uploads
     networks:
       - healthcare-network
 
@@ -94,8 +99,12 @@ services:
       DB_NAME: doctor_db
       DB_USER: admin
       DB_PASSWORD: password
+      JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      UPLOAD_DIR: /uploads/doctor-verification
     depends_on:
       - postgres-doctor
+    volumes:
+      - doctor_uploads:/uploads/doctor-verification
     networks:
       - healthcare-network
 
@@ -112,9 +121,15 @@ services:
       DB_NAME: appointment_db
       DB_USER: admin
       DB_PASSWORD: password
+      JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      AUTH_SERVICE_URL: http://auth-service:3001
+      DOCTOR_SERVICE_URL: http://doctor-service:3003
+      TELEMEDICINE_SERVICE_URL: http://telemedicine-service:3005
       KAFKA_BROKER: kafka:9092
     depends_on:
       - postgres-appointment
+      - auth-service
+      - doctor-service
       - kafka
     networks:
       - healthcare-network
@@ -132,6 +147,8 @@ services:
       DB_NAME: telemedicine_db
       DB_USER: admin
       DB_PASSWORD: password
+      JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      JITSI_BASE_URL: https://meet.jit.si
     depends_on:
       - postgres-telemedicine
     networks:
@@ -166,6 +183,9 @@ services:
       PORT: 3007
       NODE_ENV: development
       KAFKA_BROKER: kafka:9092
+      ENABLE_SMS: "${ENABLE_SMS:-true}"
+      SMSAPI_TOKEN: "367|2SaoowtSbq3Z5QnK4111TghRLMRaQZ0fgM7ZJyBF"
+      SMSAPI_SENDER_ID: "SMSAPI Demo"
     depends_on:
       - kafka
     networks:
@@ -309,7 +329,9 @@ services:
 volumes:
   auth_db_data:
   patient_db_data:
+  patient_uploads:
   doctor_db_data:
+  doctor_uploads:
   appointment_db_data:
   telemedicine_db_data:
   payment_db_data:

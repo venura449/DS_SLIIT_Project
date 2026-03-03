@@ -21,7 +21,9 @@
     "cors": "^2.8.5",
     "morgan": "^1.10.0",
     "socket.io": "^4.6.2",
-    "axios": "^1.4.0"
+    "axios": "^1.4.0",
+    "pg": "^8.11.0",
+    "jsonwebtoken": "^9.0.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.22",

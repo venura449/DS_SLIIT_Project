@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from "react";
+﻿import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { logoutUser, authenticatedFetch } from "../../utils/authService";
 import UpdateProfileForm from "../UpdateProfileForm";
 
@@ -783,6 +783,607 @@ function UserManagement() {
   );
 }
 
+/* ── DoctorVerification sub-component ── */
+function DoctorVerification() {
+  const [submissions, setSubmissions] = useState([]);
+  const [userMap, setUserMap] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [rejectModal, setRejectModal] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+
+  const DOC_LABELS = {
+    license: "Medical License",
+    government_id: "Government ID",
+    credentials: "Professional Credentials",
+    insurance: "Insurance Certificate",
+  };
+
+  const STATUS_CFG = {
+    no_documents: {
+      bg: "#f8fafc",
+      color: "#7a8fa6",
+      border: "#e4eaf0",
+      label: "No Docs",
+    },
+    pending: {
+      bg: "#fffbeb",
+      color: "#92400e",
+      border: "#fcd34d",
+      label: "⏳ Pending",
+    },
+    submitted_for_review: {
+      bg: "#eff6ff",
+      color: "#1d4ed8",
+      border: "#93c5fd",
+      label: "📋 Under Review",
+    },
+    approved: {
+      bg: "#ecfdf5",
+      color: "#065f46",
+      border: "#6ee7b7",
+      label: "✅ Approved",
+    },
+    rejected: {
+      bg: "#fef2f2",
+      color: "#dc2626",
+      border: "#fecaca",
+      label: "❌ Rejected",
+    },
+  };
+
+  const fetchSubmissions = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [subsRes, usersRes] = await Promise.all([
+        authenticatedFetch(`${API_BASE}/doctors/api/v1/verification/all`),
+        authenticatedFetch(
+          `${API_BASE}/auth/api/v1/admin/users?role=doctor&limit=200`,
+        ),
+      ]);
+      const subsData = await subsRes.json();
+      if (!subsRes.ok)
+        throw new Error(subsData.message || "Failed to load submissions");
+      setSubmissions(Array.isArray(subsData.data) ? subsData.data : []);
+
+      if (usersRes.ok) {
+        const usersData = await usersRes.json();
+        const users = usersData?.data?.users;
+        if (Array.isArray(users)) {
+          const map = {};
+          users.forEach((u) => {
+            map[u.id] = { name: u.name, email: u.email };
+          });
+          setUserMap(map);
+        }
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSubmissions();
+  }, [fetchSubmissions]);
+
+  const handleApprove = async (doctorId) => {
+    setActionLoading(`${doctorId}_approve`);
+    try {
+      const res = await authenticatedFetch(
+        `${API_BASE}/doctors/api/v1/verification/approve/${doctorId}`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to approve");
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          s.doctorId === doctorId ? { ...s, status: "approved" } : s,
+        ),
+      );
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectModal) return;
+    const { doctorId } = rejectModal;
+    setActionLoading(`${doctorId}_reject`);
+    try {
+      const res = await authenticatedFetch(
+        `${API_BASE}/doctors/api/v1/verification/reject/${doctorId}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason: rejectReason.trim() || "No reason provided",
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to reject");
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          s.doctorId === doctorId
+            ? { ...s, status: "rejected", rejectionReason: rejectReason.trim() }
+            : s,
+        ),
+      );
+      setRejectModal(null);
+      setRejectReason("");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const renderBadge = (status) => {
+    const cfg = STATUS_CFG[status] || STATUS_CFG.pending;
+    return (
+      <span
+        style={{
+          background: cfg.bg,
+          color: cfg.color,
+          border: `1px solid ${cfg.border}`,
+          padding: "3px 10px",
+          borderRadius: 20,
+          fontSize: 11,
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {cfg.label}
+      </span>
+    );
+  };
+
+  const allFiltered = statusFilter
+    ? (Array.isArray(submissions) ? submissions : []).filter(
+        (s) => s.status === statusFilter,
+      )
+    : Array.isArray(submissions)
+      ? submissions
+      : [];
+
+  const totalPages = Math.ceil(allFiltered.length / itemsPerPage);
+  const safeCurrentPage =
+    currentPage > totalPages && totalPages > 0 ? totalPages : currentPage;
+  const filtered = allFiltered.slice(
+    (safeCurrentPage - 1) * itemsPerPage,
+    safeCurrentPage * itemsPerPage,
+  );
+
+  return (
+    <>
+      <style>{`
+        .dv-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+        .dv-flabel { font-size:12px; color:#7a8fa6; font-weight:600; }
+        .dv-fbtn { padding:5px 14px; border-radius:20px; border:1px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:12px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all 0.15s; }
+        .dv-fbtn:hover { border-color:#0a3d62; color:#0a3d62; }
+        .dv-fbtn.dv-active { background:#0a3d62; color:#fff; border-color:#0a3d62; }
+        .dv-refresh { margin-left:auto; padding:6px 14px; border-radius:7px; border:1px solid #e4eaf0; background:#f8fafc; color:#0a3d62; font-size:12px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all 0.15s; display:flex; align-items:center; gap:5px; }
+        .dv-refresh:hover { background:#eff6ff; border-color:#0a3d62; }
+        .dv-refresh:disabled { opacity:0.5; cursor:default; }
+        .dv-count { font-size:12px; color:#7a8fa6; }
+        .dv-exp-btn { background:none; border:none; cursor:pointer; font-size:11px; padding:3px 7px; border-radius:4px; color:#7a8fa6; transition:all 0.15s; }
+        .dv-exp-btn:hover { background:#f0f4f8; color:#0a3d62; }
+        .dv-docs-row > td { background:#f8fbff !important; padding:0 !important; border-bottom:2px solid #e4eaf0 !important; }
+        .dv-docs-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; padding:14px 16px; }
+        .dv-doc-card { background:#fff; border:1px solid #e4eaf0; border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:4px; }
+        .dv-doc-type { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#0a3d62; }
+        .dv-doc-name { font-size:12px; color:#3a5068; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .dv-doc-date { font-size:11px; color:#b0bec8; }
+        .dv-doc-link { margin-top:6px; display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:5px; background:#eff6ff; color:#1d4ed8; font-size:11.5px; font-weight:600; text-decoration:none; border:1px solid #93c5fd; transition:all 0.15s; width:fit-content; }
+        .dv-doc-link:hover { background:#dbeafe; }
+        .dv-acts { display:flex; gap:6px; align-items:center; }
+        .dv-pagination { display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding-top:12px; border-top:1px solid #e4eaf0; }
+        .dv-pagination-info { font-size:12px; color:#7a8fa6; }
+        .dv-pagination-btns { display:flex; gap:4px; }
+        .dv-pg-btn { padding:4px 10px; border-radius:5px; border:1px solid #e4eaf0; background:#f8fafc; color:#0a3d62; font-size:12px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all 0.15s; }
+        .dv-pg-btn:hover:not(:disabled) { border-color:#0a3d62; background:#eff6ff; }
+        .dv-pg-btn:disabled { opacity:0.5; cursor:default; }
+        .dv-pg-btn.active { background:#0a3d62; color:#fff; border-color:#0a3d62; }
+        .dv-pg-ellipsis { padding:4px 6px; color:#7a8fa6; font-size:12px; }
+        .dv-approve { padding:4px 11px; font-size:11.5px; border-radius:6px; border:1px solid #86efac; background:#f0fdf4; color:#15803d; font-family:'DM Sans',sans-serif; font-weight:600; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+        .dv-approve:hover { background:#dcfce7; }
+        .dv-approve:disabled { opacity:0.5; cursor:default; }
+        .dv-reject-btn { padding:4px 11px; font-size:11.5px; border-radius:6px; border:1px solid #fca5a5; background:#fff1f1; color:#dc2626; font-family:'DM Sans',sans-serif; font-weight:600; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+        .dv-reject-btn:hover { background:#fee2e2; }
+        .dv-reject-btn:disabled { opacity:0.5; cursor:default; }
+        .dv-rej-note { font-size:11px; color:#dc2626; font-style:italic; margin-top:2px; }
+        .dv-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:200; display:flex; align-items:center; justify-content:center; padding:16px; }
+        .dv-modal { background:#fff; border-radius:12px; padding:28px; width:100%; max-width:420px; box-shadow:0 16px 48px rgba(0,0,0,0.18); }
+        .dv-modal-title { font-family:'Sora',sans-serif; font-size:16px; font-weight:700; color:#dc2626; margin-bottom:6px; }
+        .dv-modal-sub { font-size:13px; color:#7a8fa6; margin-bottom:16px; }
+        .dv-textarea { width:100%; padding:9px 12px; border:1px solid #e4eaf0; border-radius:7px; font-size:13px; font-family:'DM Sans',sans-serif; color:#1a3a52; resize:vertical; min-height:80px; box-sizing:border-box; }
+        .dv-textarea:focus { outline:none; border-color:#fca5a5; }
+        .dv-modal-actions { display:flex; gap:10px; margin-top:16px; justify-content:flex-end; }
+        .dv-modal-cancel { padding:9px 18px; border-radius:7px; border:1px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
+        .dv-modal-confirm { padding:9px 18px; border-radius:7px; border:none; background:#dc2626; color:#fff; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
+        .dv-modal-confirm:disabled { opacity:0.5; cursor:default; }
+        @keyframes dv-shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+      `}</style>
+
+      {/* Toolbar */}
+      <div className="dv-toolbar">
+        <span className="dv-flabel">Filter:</span>
+        {[
+          { key: "", label: "All" },
+          { key: "submitted_for_review", label: "Under Review" },
+          { key: "pending", label: "Pending" },
+          { key: "approved", label: "Approved" },
+          { key: "rejected", label: "Rejected" },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            className={`dv-fbtn${statusFilter === key ? " dv-active" : ""}`}
+            onClick={() => {
+              setStatusFilter(key);
+              setCurrentPage(1);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="dv-count">
+          {allFiltered.length} submission{allFiltered.length !== 1 ? "s" : ""}
+        </span>
+        <button
+          className="dv-refresh"
+          onClick={fetchSubmissions}
+          disabled={loading}
+        >
+          🔄 Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 12 }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      <div className="ad-table-wrap">
+        <table className="ad-table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}></th>
+              <th>Doctor</th>
+              <th>Docs</th>
+              <th>Status</th>
+              <th>Last Updated</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <tr key={i}>
+                  {Array.from({ length: 6 }).map((__, j) => (
+                    <td key={j}>
+                      <div
+                        style={{
+                          height: 13,
+                          borderRadius: 4,
+                          background:
+                            "linear-gradient(90deg,#f0f4f8 25%,#e8eef5 50%,#f0f4f8 75%)",
+                          backgroundSize: "400% 100%",
+                          animation: "dv-shimmer 1.2s infinite",
+                        }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : allFiltered.length === 0 ? (
+              <tr className="empty-row">
+                <td colSpan="6">
+                  {statusFilter
+                    ? `No ${statusFilter.replace(/_/g, " ")} submissions`
+                    : "No verification submissions yet"}
+                </td>
+              </tr>
+            ) : (
+              filtered.map((sub) => (
+                <Fragment key={sub.doctorId}>
+                  <tr>
+                    <td>
+                      <button
+                        className="dv-exp-btn"
+                        onClick={() =>
+                          setExpandedId((id) =>
+                            id === sub.doctorId ? null : sub.doctorId,
+                          )
+                        }
+                        title="View documents"
+                      >
+                        {expandedId === sub.doctorId ? "▼" : "▶"}
+                      </button>
+                    </td>
+                    <td>
+                      {userMap[sub.doctorId] ? (
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              fontSize: 13,
+                              color: "#1a3a52",
+                            }}
+                          >
+                            {userMap[sub.doctorId].name}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#7a8fa6" }}>
+                            {userMap[sub.doctorId].email}
+                          </div>
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: 12,
+                            color: "#3a5068",
+                          }}
+                          title={sub.doctorId}
+                        >
+                          {sub.doctorId.length > 20
+                            ? `${sub.doctorId.slice(0, 20)}…`
+                            : sub.doctorId}
+                        </span>
+                      )}
+                      {sub.status === "rejected" && sub.rejectionReason && (
+                        <div className="dv-rej-note">
+                          Reason: {sub.rejectionReason}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <span style={{ fontWeight: 600, color: "#0a3d62" }}>
+                        {sub.documentsSubmitted}
+                      </span>
+                      <span style={{ color: "#b0bec8", fontSize: 11 }}>
+                        {" "}
+                        / {sub.totalRequired}
+                      </span>
+                    </td>
+                    <td>{renderBadge(sub.status)}</td>
+                    <td style={{ fontSize: 12, color: "#7a8fa6" }}>
+                      {new Date(sub.lastUpdated).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </td>
+                    <td>
+                      <div className="dv-acts">
+                        {sub.status === "submitted_for_review" && (
+                          <>
+                            <button
+                              className="dv-approve"
+                              disabled={
+                                actionLoading === `${sub.doctorId}_approve`
+                              }
+                              onClick={() => handleApprove(sub.doctorId)}
+                            >
+                              {actionLoading === `${sub.doctorId}_approve`
+                                ? "…"
+                                : "✓ Approve"}
+                            </button>
+                            <button
+                              className="dv-reject-btn"
+                              disabled={
+                                actionLoading === `${sub.doctorId}_reject`
+                              }
+                              onClick={() => {
+                                setRejectModal({ doctorId: sub.doctorId });
+                                setRejectReason("");
+                              }}
+                            >
+                              ✕ Reject
+                            </button>
+                          </>
+                        )}
+                        {sub.status === "approved" && (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#065f46",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ✅ Verified
+                          </span>
+                        )}
+                        {sub.status === "rejected" && (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#dc2626",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ❌ Rejected
+                          </span>
+                        )}
+                        {(sub.status === "pending" ||
+                          sub.status === "no_documents") && (
+                          <span style={{ fontSize: 12, color: "#92400e" }}>
+                            Awaiting submission
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedId === sub.doctorId && (
+                    <tr className="dv-docs-row">
+                      <td colSpan="6">
+                        {sub.documents && sub.documents.length > 0 ? (
+                          <div className="dv-docs-grid">
+                            {sub.documents.map((doc) => (
+                              <div key={doc.id} className="dv-doc-card">
+                                <div className="dv-doc-type">
+                                  {DOC_LABELS[doc.documentType] ||
+                                    doc.documentType}
+                                </div>
+                                <div
+                                  className="dv-doc-name"
+                                  title={doc.fileName}
+                                >
+                                  {doc.fileName}
+                                </div>
+                                <div className="dv-doc-date">
+                                  {new Date(doc.uploadedAt).toLocaleDateString(
+                                    "en-US",
+                                    {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                    },
+                                  )}
+                                </div>
+                                {doc.documentUrl ? (
+                                  <a
+                                    href={`${import.meta.env.VITE_API_BASE_URL}/doctors${doc.documentUrl}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="dv-doc-link"
+                                  >
+                                    📄 View PDF
+                                  </a>
+                                ) : (
+                                  <span
+                                    style={{ fontSize: 11, color: "#b0bec8" }}
+                                  >
+                                    No URL available
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: "14px 16px",
+                              fontSize: 13,
+                              color: "#b0bec8",
+                            }}
+                          >
+                            No documents uploaded
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {!loading && totalPages > 1 && (
+        <div className="dv-pagination">
+          <span className="dv-pagination-info">
+            Showing{" "}
+            {Math.min(
+              (safeCurrentPage - 1) * itemsPerPage + 1,
+              allFiltered.length,
+            )}
+            –{Math.min(safeCurrentPage * itemsPerPage, allFiltered.length)} of{" "}
+            {allFiltered.length}
+          </span>
+          <div className="dv-pagination-btns">
+            <button
+              className="dv-pg-btn"
+              disabled={safeCurrentPage === 1}
+              onClick={() => setCurrentPage((p) => p - 1)}
+            >
+              ‹
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(
+                (p) =>
+                  p === 1 ||
+                  p === totalPages ||
+                  Math.abs(p - safeCurrentPage) <= 1,
+              )
+              .reduce((acc, p, idx, arr) => {
+                if (idx > 0 && p - arr[idx - 1] > 1) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "…" ? (
+                  <span key={`e${i}`} className="dv-pg-ellipsis">
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={p}
+                    className={`dv-pg-btn${safeCurrentPage === p ? " active" : ""}`}
+                    onClick={() => setCurrentPage(p)}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
+            <button
+              className="dv-pg-btn"
+              disabled={safeCurrentPage === totalPages}
+              onClick={() => setCurrentPage((p) => p + 1)}
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectModal && (
+        <div className="dv-overlay" onClick={() => setRejectModal(null)}>
+          <div className="dv-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="dv-modal-title">Reject Verification</div>
+            <div className="dv-modal-sub">
+              Provide a reason for rejection. The doctor will be notified.
+            </div>
+            <textarea
+              className="dv-textarea"
+              placeholder="e.g. Documents are unclear, expired, or incomplete…"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+            <div className="dv-modal-actions">
+              <button
+                className="dv-modal-cancel"
+                onClick={() => setRejectModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="dv-modal-confirm"
+                onClick={handleRejectSubmit}
+                disabled={actionLoading !== null}
+              >
+                {actionLoading ? "Rejecting…" : "Confirm Reject"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
   { id: "users", icon: "👥", label: "Users" },
@@ -1271,25 +1872,7 @@ const AdminDashboard = ({ user: initialUser, onLogout }) => {
                   <p>Review and approve doctor credential submissions.</p>
                 </div>
                 <div className="ad-section">
-                  <div className="ad-table-wrap">
-                    <table className="ad-table">
-                      <thead>
-                        <tr>
-                          <th>Doctor</th>
-                          <th>Email</th>
-                          <th>License #</th>
-                          <th>Submitted</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="empty-row">
-                          <td colSpan="6">No pending verifications</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                  <DoctorVerification />
                 </div>
               </>
             )}
