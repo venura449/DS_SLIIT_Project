@@ -1,9 +1,12 @@
 const Payment = require('../models/payment');
 const stripe = require('../config/stripe');
 
+/**
+ * Create a new payment and initiate Stripe payment intent
+ */
 exports.createPayment = async (paymentData) => {
     if (!paymentData.amount || !paymentData.appointment_id || !paymentData.patient_id) {
-        throw new Error('All feilds are required');
+        throw new Error('All fields are required');
     }
 
     const payment = await Payment.create(paymentData);
@@ -24,7 +27,97 @@ exports.createPayment = async (paymentData) => {
     };
 };
 
+/**
+ * Get all payments
+ */
+exports.getPayments = async () => {
+    return await Payment.findAll();
+}
+
+/**
+ * Get payments by user id
+ */
+exports.getPaymentsByUserId = async (userId) => {
+    if (!userId) {
+        throw new Error('User ID is required');
+    }
+
+    const payments = await Payment.findByPatientId(userId);
+
+    if (!payments) {
+        throw new Error('No payments found for this user');
+    }
+
+    return payments;
+}
+
+/**
+ * Get payment by payment id
+ */
+exports.getPaymentById = async (paymentId) => {
+   const payment = await Payment.findById(paymentId);
+
+   if (!payment) {
+        throw new Error('Payment not found');
+   }
+
+    return payment;
+}
+
+/**
+ * Get payment by appointment id
+ */
+exports.getPaymentByAppointmentId = async (appointmentId) => {
+    if (!appointmentId) {
+        throw new Error('Appointment ID is required');
+    }
+    const payment = await Payment.findByAppointmentId(appointmentId);
+
+    if (!payment) {
+        throw new Error('Payment not found');
+    }
+    return payment;
+}
+
+/**
+ * Get payments by status
+ */
+exports.getPaymentsByStatus = async (status) => {
+   if (!status) {
+        throw new Error('Status is required');
+    }
+
+    const payments = await Payment.findByStatus(status);
+
+    return payments;
+
+}
+
+/**
+ * Update payment status
+ */
 exports.updatePaymentStatus = async (paymentId, status, transactionId) => {
     const updatedPayment = await Payment.updateStatus(paymentId, status, transactionId);
+
+    if (!updatedPayment) {
+        throw new Error('Payment not found');
+    }
+
     return updatedPayment;
+}
+
+exports.deletePayment = async (paymentId, user) => {
+    const deletePayment = await Payment.findById(paymentId);
+
+    if (!deletePayment) {
+        throw new Error('Payment not found');
+    }
+
+    if ((user.role === 'patient' && deletePayment.patient_id !== user.userId) || user.role !== 'admin') {
+        throw new Error('Unauthorized');
+    }
+
+    const deletedPayment = await Payment.delete(paymentId);
+
+    return deletedPayment;
 }
