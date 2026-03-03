@@ -64,7 +64,9 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
             </div>
             <div style={styles.infoBody}>
               For security reasons, Jitsi Meet runs in its own browser window.
-              If your browser blocks pop-ups, allow the window when prompted.
+              When your browser shows a pop-up prompt, click "Allow" so the
+              meeting window can open. If it is blocked, enable pop-ups for
+              this site and try again.
             </div>
           </div>
         </div>
@@ -75,8 +77,9 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
           <li style={styles.step}>
             <span style={styles.stepNum}>1</span>
             <div>
-              Click <strong>"Open Meeting"</strong> below — your consultation
-              room will open in a separate window.
+              Click <strong>"Open Meeting"</strong> below your consultation
+              room will open in a separate window. If you see a browser bar
+              about pop-ups, choose <strong>Allow</strong>.
             </div>
           </li>
           <li style={styles.step}>
