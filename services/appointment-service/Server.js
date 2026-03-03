@@ -3,6 +3,8 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
 const { initializeDatabase } = require('./config/postgres');
+const { initializeProducer, disconnectProducer } = require('./config/kafka');
+const { startReminderScheduler } = require('./services/reminderScheduler');
 
 // Load environment variables
 dotenv.config();
@@ -44,10 +46,21 @@ const server = app.listen(PORT, async () => {
     try {
         await initializeDatabase();
         console.log('Database initialized successfully');
+        await initializeProducer();
+        startReminderScheduler();
     } catch (error) {
-        console.error('Failed to initialize database:', error);
+        console.error('Failed to initialize services:', error);
         process.exit(1);
     }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(async () => {
+        await disconnectProducer();
+        process.exit(0);
+    });
 });
 
 module.exports = server;

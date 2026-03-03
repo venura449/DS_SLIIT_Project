@@ -1,4 +1,9 @@
 const { Kafka } = require('kafkajs');
+const {
+    sendRegistrationSMS,
+    sendAppointmentConfirmationSMS,
+    sendAppointmentReminderSMS,
+} = require('../services/twilioService');
 
 const kafka = new Kafka({
     clientId: 'notification-service',
@@ -12,8 +17,11 @@ const initializeConsumer = async () => {
         await consumer.connect();
         console.log('Notification Service Kafka Consumer connected');
 
-        // Subscribe to both auth and payment events
-        await consumer.subscribe({ topics: ['auth-events', 'payment-events'], fromBeginning: false });
+        // Subscribe to auth, payment, and appointment events
+        await consumer.subscribe({
+            topics: ['auth-events', 'payment-events', 'appointment-events'],
+            fromBeginning: false,
+        });
 
         // Start consuming messages
         await consumer.run({
@@ -37,31 +45,64 @@ const initializeConsumer = async () => {
 
 const handleEvent = async (event) => {
     try {
-        const { eventType, data, timestamp } = event;
+        const { eventType, data } = event;
 
         switch (eventType) {
             case 'USER_REGISTERED':
                 console.log('Handling user registration event:', data);
-                // Send welcome email notification
-                // await sendWelcomeEmail(data.email, data.name);
+                if (data.phone) {
+                    await sendRegistrationSMS(data.phone, data.name);
+                } else {
+                    console.warn('USER_REGISTERED event missing phone number — SMS skipped.');
+                }
                 break;
 
             case 'USER_LOGIN':
                 console.log('Handling user login event:', data);
-                // Send login notification
-                // await sendLoginNotification(data.email);
+                // Login SMS notifications are intentionally skipped to avoid spam
+                break;
+
+            case 'USER_PROFILE_UPDATED':
+                console.log('Handling user profile updated event:', data);
+                // No SMS action needed for profile updates
+                break;
+
+            case 'APPOINTMENT_BOOKED':
+                console.log('Handling appointment booked event:', data);
+                if (data.patientPhone) {
+                    await sendAppointmentConfirmationSMS(
+                        data.patientPhone,
+                        data.patientName || 'Patient',
+                        data.doctorName || 'the doctor',
+                        data.appointmentDate,
+                        data.startTime
+                    );
+                } else {
+                    console.warn('APPOINTMENT_BOOKED event missing patientPhone — SMS skipped.');
+                }
+                break;
+
+            case 'APPOINTMENT_REMINDER':
+                console.log('Handling appointment reminder event:', data);
+                if (data.patientPhone) {
+                    await sendAppointmentReminderSMS(
+                        data.patientPhone,
+                        data.patientName || 'Patient',
+                        data.doctorName || 'the doctor',
+                        data.appointmentDate,
+                        data.startTime
+                    );
+                } else {
+                    console.warn('APPOINTMENT_REMINDER event missing patientPhone — SMS skipped.');
+                }
                 break;
 
             case 'PAYMENT_COMPLETED':
                 console.log('Handling payment completed event:', data);
-                // Send payment confirmation notification
-                // await sendPaymentConfirmation(data.email, data.transactionId);
                 break;
 
             case 'PAYMENT_FAILED':
                 console.log('Handling payment failed event:', data);
-                // Send payment failure notification
-                // await sendPaymentFailureNotification(data.email, data.reason);
                 break;
 
             default:

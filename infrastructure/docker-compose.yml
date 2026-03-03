@@ -122,11 +122,13 @@ services:
       DB_USER: admin
       DB_PASSWORD: password
       JWT_SECRET: SyOudFfvRbmoURg4Mq2N34wq
+      AUTH_SERVICE_URL: http://auth-service:3001
       DOCTOR_SERVICE_URL: http://doctor-service:3003
       TELEMEDICINE_SERVICE_URL: http://telemedicine-service:3005
       KAFKA_BROKER: kafka:9092
     depends_on:
       - postgres-appointment
+      - auth-service
       - doctor-service
       - kafka
     networks:
@@ -181,6 +183,9 @@ services:
       PORT: 3007
       NODE_ENV: development
       KAFKA_BROKER: kafka:9092
+      ENABLE_SMS: "${ENABLE_SMS:-true}"
+      SMSAPI_TOKEN: "367|2SaoowtSbq3Z5QnK4111TghRLMRaQZ0fgM7ZJyBF"
+      SMSAPI_SENDER_ID: "SMSAPI Demo"
     depends_on:
       - kafka
     networks:

@@ -179,6 +179,7 @@ const BookAppointment = () => {
       reason: bookingReason,
       doctorName: selectedDoctor.name,
       patientName: getUserData()?.name || "",
+      patientPhone: getUserData()?.phone || "",
       isTelemedicine,
     });
     if (res.success) {
