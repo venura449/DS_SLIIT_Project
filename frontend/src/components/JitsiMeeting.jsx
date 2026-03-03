@@ -12,10 +12,34 @@ import React from "react";
  */
 const JitsiMeeting = ({ roomName, displayName, onClose }) => {
   const meetingUrl = `https://meet.jit.si/${roomName}`;
+  const [showPrompt, setShowPrompt] = React.useState(false);
+
+  const launchMeetingWindow = () => {
+    const features = "noopener,noreferrer,width=1280,height=800,resizable=yes";
+    const meetingWindow = window.open(
+      meetingUrl,
+      "jitsi-meeting-window",
+      features
+    );
+
+    if (!meetingWindow) {
+      alert("We couldn't open the meeting window. Please enable pop-ups and try again.");
+      return;
+    }
+
+    meetingWindow.focus();
+  };
 
   const handleOpen = () => {
-    window.open(meetingUrl, "_blank", "noopener,noreferrer");
+    setShowPrompt(true);
   };
+
+  const handleConfirm = () => {
+    setShowPrompt(false);
+    launchMeetingWindow();
+  };
+
+  const handleCancelPrompt = () => setShowPrompt(false);
 
   return (
     <div style={styles.overlay}>
@@ -36,11 +60,13 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
           <span style={{ fontSize: 18 }}>ℹ️</span>
           <div>
             <div style={styles.infoTitle}>
-              Meeting opens in a new browser tab
+              Meeting opens in a separate window
             </div>
             <div style={styles.infoBody}>
-              For security reasons, Jitsi Meet requires the meeting to run in
-              its own browser tab. Please follow the steps below.
+              For security reasons, Jitsi Meet runs in its own browser window.
+              When your browser shows a pop-up prompt, click "Allow" so the
+              meeting window can open. If it is blocked, enable pop-ups for
+              this site and try again.
             </div>
           </div>
         </div>
@@ -51,14 +77,15 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
           <li style={styles.step}>
             <span style={styles.stepNum}>1</span>
             <div>
-              Click <strong>"Open Meeting"</strong> below — your consultation
-              room will open in a new tab.
+              Click <strong>"Open Meeting"</strong> below your consultation
+              room will open in a separate window. If you see a browser bar
+              about pop-ups, choose <strong>Allow</strong>.
             </div>
           </li>
           <li style={styles.step}>
             <span style={styles.stepNum}>2</span>
             <div>
-              In the new tab, if prompted with{" "}
+              In the meeting window, if prompted with{" "}
               <em>"The conference has not yet started"</em>, click{" "}
               <strong>"I am the host"</strong> or
               <strong> "Start meeting"</strong> to begin as moderator.
@@ -104,6 +131,32 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
           </button>
         </div>
       </div>
+      {showPrompt && (
+        <div style={styles.promptOverlay}>
+          <div style={styles.promptCard}>
+            <div style={styles.promptHeader}>
+              <span style={styles.promptIcon}>🔒</span>
+              <div>
+                <div style={styles.promptTitle}>Open in Secure Window</div>
+                <div style={styles.promptSub}>Allow pop-ups to continue</div>
+              </div>
+            </div>
+            <div style={styles.promptBody}>
+              We will open your Jitsi consultation in a separate browser
+              window for better reliability. If your browser blocks pop-ups,
+              please allow this site.
+            </div>
+            <div style={styles.promptActions}>
+              <button style={styles.promptCancel} onClick={handleCancelPrompt}>
+                Not now
+              </button>
+              <button style={styles.promptConfirm} onClick={handleConfirm}>
+                Open meeting window
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -243,6 +296,73 @@ const styles = {
   },
   openBtn: {
     padding: "10px 24px",
+    borderRadius: 8,
+    border: "none",
+    background: "linear-gradient(135deg,#0a3d62,#1a6fa0)",
+    color: "#fff",
+    fontFamily: "'DM Sans',sans-serif",
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+    boxShadow: "0 3px 10px rgba(10,61,98,0.25)",
+  },
+  promptOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(7,20,40,0.65)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 10000,
+  },
+  promptCard: {
+    width: "100%",
+    maxWidth: 420,
+    background: "#f8fbff",
+    borderRadius: 14,
+    boxShadow: "0 18px 44px rgba(0,0,0,0.25)",
+    border: "1px solid #c8ddf2",
+    padding: "18px 20px",
+  },
+  promptHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  promptIcon: { fontSize: 20 },
+  promptTitle: {
+    fontFamily: "'Sora',sans-serif",
+    fontWeight: 700,
+    fontSize: 15,
+    color: "#0a3d62",
+  },
+  promptSub: { fontSize: 12, color: "#54779b" },
+  promptBody: {
+    fontSize: 13,
+    color: "#2f4156",
+    lineHeight: 1.5,
+    marginBottom: 16,
+  },
+  promptActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  promptCancel: {
+    padding: "9px 14px",
+    borderRadius: 8,
+    border: "1px solid #d4deeb",
+    background: "#fff",
+    color: "#3a5068",
+    fontFamily: "'DM Sans',sans-serif",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  promptConfirm: {
+    padding: "9px 16px",
     borderRadius: 8,
     border: "none",
     background: "linear-gradient(135deg,#0a3d62,#1a6fa0)",

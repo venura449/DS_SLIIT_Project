@@ -747,14 +747,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
             {activeTab === "overview" && (
               <>
                 <div className="dd-page-head">
-                  <h2>Welcome, Dr. {user?.name || "Doctor"} ðŸ‘‹</h2>
+                  <h2>Welcome, Dr. {user?.name || "Doctor"}</h2>
                   <p>Here's a summary of your activity today.</p>
                 </div>
                 <div className="dd-stats">
                   <div className="dd-stat">
                     <div className="dd-stat-top">
                       <div className="dd-stat-label">Today's Appointments</div>
-                      <div className="dd-stat-icon">ðŸ“…</div>
+                      <div className="dd-stat-icon">📅</div>
                     </div>
                     <div className="dd-stat-value">0</div>
                     <div className="dd-stat-sub">None scheduled</div>
@@ -762,7 +762,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   <div className="dd-stat">
                     <div className="dd-stat-top">
                       <div className="dd-stat-label">Total Patients</div>
-                      <div className="dd-stat-icon">ðŸ‘¥</div>
+                      <div className="dd-stat-icon">👥</div>
                     </div>
                     <div className="dd-stat-value">0</div>
                     <div className="dd-stat-sub">No patients yet</div>
@@ -770,7 +770,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   <div className="dd-stat">
                     <div className="dd-stat-top">
                       <div className="dd-stat-label">Consultations</div>
-                      <div className="dd-stat-icon">ðŸ’¬</div>
+                      <div className="dd-stat-icon">💬</div>
                     </div>
                     <div className="dd-stat-value">0</div>
                     <div className="dd-stat-sub">No active sessions</div>
@@ -799,7 +799,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                 </div>
                 <div className="dd-section">
                   <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ‘¥</div>
+                    <div className="dd-empty-icon">👥</div>
                     <p>No patients yet.</p>
                   </div>
                 </div>
@@ -814,7 +814,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                 </div>
                 <div className="dd-section">
                   <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ’¬</div>
+                    <div className="dd-empty-icon">📹</div>
                     <p>
                       Go to the <strong>Appointments</strong> tab and click the{" "}
                       <span
