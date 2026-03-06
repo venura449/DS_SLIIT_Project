@@ -178,18 +178,49 @@ const BookAppointment = () => {
     setBookingLoading(true);
     setBookingError("");
 
-    const token = localStorage.getItem("token")
-
-    const result = await createPayment(bookingSlot.id, selectedDoctor.consultation_fee,token);
+    const result = await createPayment(bookingSlot.id, selectedDoctor.consultation_fee);
 
     if(result.success){
       setClientSecret(result.data.clientSecret);
     }
     else{
-      setBookingError(result.error);
+      setBookingError(result.error || "Payment initialization failed");
     }
 
     setBookingLoading(false);
+  };
+
+  const handlePaymentSuccess = async () => {
+    try {
+      const res = await appointmentService.createBooking({
+        doctorId: selectedDoctor.doctor_id,
+        slotId: bookingSlot.id,
+        appointmentDate: bookingSlot.appointmentDate,
+        startTime: bookingSlot.start_time.substring(0, 5),
+        endTime: bookingSlot.end_time.substring(0, 5),
+        reason: bookingReason,
+        doctorName: selectedDoctor.name,
+        patientName: getUserData()?.name || "",
+        patientPhone: getUserData()?.phone || "",
+        isTelemedicine
+      });
+
+      if (res.success) {
+        setBookingSuccess({
+          doctor: selectedDoctor.name,
+          date: fmtDate(bookingSlot.appointmentDate),
+          time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
+          isTelemedicine
+        });
+
+        setBookingSlot(null);
+        setClientSecret(null);
+        loadSlots(selectedDoctor, currentWeek);
+      }
+
+    } catch (err) {
+      setBookingError(err.message || "Payment failed");
+    }
   };
 
   /* ── join telemedicine meeting ─────────────────────────────── */
@@ -938,45 +969,25 @@ const BookAppointment = () => {
           </div>
         </div>
       )}
-      {/* Payment Screen trigerring and Storing Appointment*/}
+
+      {/* ══════════════════ STRIPE PAYMENT MODAL ══════════════════ */}
       {clientSecret && (
-        < Elements stripe={stripePromise} options={{ clientSecret }}>
-          <PaymentForm
-            clientSecret={clientSecret}
-            onSuccess={async () => {
+        <div className="ba-overlay">
+          <div className="ba-modal">
+            <div className="ba-modal-title">Complete Payment</div>
 
-              const res = await appointmentService.createBooking({
-                doctorId: selectedDoctor.doctor_id,
-                slotId: bookingSlot.id,
-                appointmentDate: bookingSlot.appointmentDate,
-                startTime: bookingSlot.start_time.substring(0,5),
-                endTime: bookingSlot.end_time.substring(0,5),
-                reason: bookingReason,
-                doctorName: selectedDoctor.name,
-                patientName: getUserData()?.name || "",
-                patientPhone: getUserData()?.phone || "",
-                isTelemedicine
-              });
-
-              if(res.success){
-
-                setBookingSuccess({
-                  doctor: selectedDoctor.name,
-                  date: fmtDate(bookingSlot.appointmentDate),
-                  time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
-                  isTelemedicine
-                });
-
-                setBookingSlot(null);
-                setClientSecret(null);
-                loadSlots(selectedDoctor, currentWeek);
-              }
-            }}
-          />
-        </Elements> 
+            <Elements stripe={stripePromise} options={{ clientSecret }}>
+              <PaymentForm
+                clientSecret={clientSecret}
+                onSuccess={handlePaymentSuccess}
+                onCancel={() => setClientSecret(null)}
+              />
+            </Elements>
+          </div>
+        </div>
       )}
     </div>
-  );
+  )
 };
 
 export default BookAppointment;

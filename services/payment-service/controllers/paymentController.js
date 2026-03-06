@@ -7,17 +7,18 @@ exports.insertPayment = async (req, res) => {
     try {
         const patient_id = req.user.userId;
         const { amount, slot_id } = req.body;
-
+        console.log("Mn paymnet cntl");
         const paymentData = { amount, slot_id, patient_id };
 
         const result = await createPayment(paymentData);
 
         res.status(201).json({ success: true, message: 'Payment initiated', data: result });
     } catch (error) {
-        if(error.message === 'Amount field is required' || error.message === 'Appointment ID field is required' || error.message === 'Patient ID field is required') {
+        console.error("Payment error:", error);
+        if(error.message === 'All fields are required') {
             res.status(400).json({ success: false, error: error.message });
         }else {
-            res.status(500).json({ success: false, error: error.message });
+            res.status(500).json({ success: false, error: error.message || "Payment creation failed"});
         }
     }
 };

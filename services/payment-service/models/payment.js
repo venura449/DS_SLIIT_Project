@@ -6,14 +6,14 @@ class Payment {
      * Create a new payment record
      */
     static async create(paymentData) {
-        const { appointment_id, patient_id, amount, status = 'PENDING', transaction_id } = paymentData;
+        const { slot_id, patient_id, amount, status = 'PENDING', transaction_id } = paymentData;
         const query = `
-            INSERT INTO payments (appointment_id, patient_id, amount, status, transaction_id)
+            INSERT INTO payments (slot_id, patient_id, amount, status, transaction_id)
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, appointment_id, patient_id, amount, status, transaction_id, created_at
+            RETURNING id, slot_id, patient_id, amount, status, transaction_id, created_at
         `;
         try {
-            const result = await db.query(query, [appointment_id, patient_id, amount, status, transaction_id]);
+            const result = await db.query(query, [slot_id, patient_id, amount, status, transaction_id]);
             return result.rows[0];
         } catch (error) {
             throw error;

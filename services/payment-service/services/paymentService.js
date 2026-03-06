@@ -16,7 +16,7 @@ exports.createPayment = async (paymentData) => {
         currency: 'usd',
         metadata: {
             payment_id: payment.id,
-            appointment_id: payment.slot_id,
+            slot_id: payment.slot_id,
             patient_id: payment.patient_id,
         },
     });
