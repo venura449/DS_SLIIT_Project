@@ -5,7 +5,7 @@ const stripe = require('../config/stripe');
  * Create a new payment and initiate Stripe payment intent
  */
 exports.createPayment = async (paymentData) => {
-    if (!paymentData.amount || !paymentData.appointment_id || !paymentData.patient_id) {
+    if (!paymentData.amount || !paymentData.slot_id || !paymentData.patient_id) {
         throw new Error('All fields are required');
     }
 
@@ -16,7 +16,7 @@ exports.createPayment = async (paymentData) => {
         currency: 'usd',
         metadata: {
             payment_id: payment.id,
-            appointment_id: payment.appointment_id,
+            appointment_id: payment.slot_id,
             patient_id: payment.patient_id,
         },
     });
@@ -113,7 +113,7 @@ exports.deletePayment = async (paymentId, user) => {
         throw new Error('Payment not found');
     }
 
-    if ((user.role === 'patient' && deletePayment.patient_id !== user.userId) || user.role !== 'admin') {
+    if ((user.role === 'patient' && deletePayment.patient_id !== user.userId)) {
         throw new Error('Unauthorized');
     }
 

@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import * as appointmentService from "../utils/appointmentService";
 import * as telemedicineService from "../utils/telemedicineService";
+import PaymentForm from "./PaymentForm";
+import { createPayment } from "../utils/paymentService";
 import { getUserData } from "../utils/authService";
+import { Elements } from "@stripe/react-stripe-js";
 import JitsiMeeting from "./JitsiMeeting";
+import stripePromise from "../utils/stripeService";
 
 /* ── constants ─────────────────────────────────────────────────── */
 
@@ -102,6 +106,9 @@ const BookAppointment = () => {
   const [chatSending, setChatSending] = useState(false);
   const chatEndRef = useRef(null);
 
+  // Client secret for payment
+  const[clientSecret, setClientSecret] =useState(null);
+
   /* ── load doctors ────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -170,32 +177,18 @@ const BookAppointment = () => {
   const handleBook = async () => {
     setBookingLoading(true);
     setBookingError("");
-    const res = await appointmentService.createBooking({
-      doctorId: selectedDoctor.doctor_id,
-      slotId: bookingSlot.id,
-      appointmentDate: bookingSlot.appointmentDate,
-      startTime: bookingSlot.start_time.substring(0, 5),
-      endTime: bookingSlot.end_time.substring(0, 5),
-      reason: bookingReason,
-      doctorName: selectedDoctor.name,
-      patientName: getUserData()?.name || "",
-      patientPhone: getUserData()?.phone || "",
-      isTelemedicine,
-    });
-    if (res.success) {
-      setBookingSuccess({
-        doctor: selectedDoctor.name,
-        date: fmtDate(bookingSlot.appointmentDate),
-        time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
-        isTelemedicine,
-      });
-      setBookingSlot(null);
-      setIsTelemedicine(false);
-      // Refresh slots to reflect the booking
-      loadSlots(selectedDoctor, currentWeek);
-    } else {
-      setBookingError(res.error);
+
+    const token = localStorage.getItem("token")
+
+    const result = await createPayment(bookingSlot.id, selectedDoctor.consultation_fee,token);
+
+    if(result.success){
+      setClientSecret(result.data.clientSecret);
     }
+    else{
+      setBookingError(result.error);
+    }
+
     setBookingLoading(false);
   };
 
@@ -944,6 +937,43 @@ const BookAppointment = () => {
             </div>
           </div>
         </div>
+      )}
+      {/* Payment Screen trigerring and Storing Appointment*/}
+      {clientSecret && (
+        < Elements stripe={stripePromise} options={{ clientSecret }}>
+          <PaymentForm
+            clientSecret={clientSecret}
+            onSuccess={async () => {
+
+              const res = await appointmentService.createBooking({
+                doctorId: selectedDoctor.doctor_id,
+                slotId: bookingSlot.id,
+                appointmentDate: bookingSlot.appointmentDate,
+                startTime: bookingSlot.start_time.substring(0,5),
+                endTime: bookingSlot.end_time.substring(0,5),
+                reason: bookingReason,
+                doctorName: selectedDoctor.name,
+                patientName: getUserData()?.name || "",
+                patientPhone: getUserData()?.phone || "",
+                isTelemedicine
+              });
+
+              if(res.success){
+
+                setBookingSuccess({
+                  doctor: selectedDoctor.name,
+                  date: fmtDate(bookingSlot.appointmentDate),
+                  time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
+                  isTelemedicine
+                });
+
+                setBookingSlot(null);
+                setClientSecret(null);
+                loadSlots(selectedDoctor, currentWeek);
+              }
+            }}
+          />
+        </Elements> 
       )}
     </div>
   );
