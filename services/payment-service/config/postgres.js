@@ -31,7 +31,7 @@ const initializeDatabase = async () => {
         const createTableQuery = `
         CREATE TABLE IF NOT EXISTS payments (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            appointment_id VARCHAR(255) NOT NULL,
+            slot_id VARCHAR(255) NOT NULL,
             patient_id VARCHAR(255) NOT NULL,
             amount NUMERIC(10, 2) NOT NULL,
             status payment_status DEFAULT 'PENDING',
