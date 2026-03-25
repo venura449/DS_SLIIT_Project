@@ -43,6 +43,19 @@ const pageTitles = {
   profile: "Doctor Profile",
 };
 
+const isAppointmentOverdue = (appointment) => {
+  // Appointment is overdue if date has passed AND status is not completed/cancelled/ended
+  if (!appointment.appointment_date) return false;
+  const appointmentDate = new Date(appointment.appointment_date.split("T")[0]);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isDatePassed = appointmentDate < today;
+  const isNotCompleted = !["completed", "cancelled", "ended"].includes(
+    appointment.status,
+  );
+  return isDatePassed && isNotCompleted;
+};
+
 const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showProfile, setShowProfile] = useState(false);
@@ -688,7 +701,9 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         <aside className="dd-sidebar">
           <div className="dd-brand">
             <div className="dd-brand-row">
-              <div className="dd-brand-icon">🏥</div>
+              <div className="dd-brand-icon">
+                <img src="/src/assets/favicon.png" alt="MediConnect Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              </div>
               <div>
                 <div className="dd-brand-name">
                   Medi<span>Connect</span>
@@ -1277,6 +1292,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-badge.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
                   .da-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
                   .da-badge.ended { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+                  .da-badge.overdue { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+                  .da-card.overdue { opacity:.6; }
                   .da-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; }
                   .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
                   .da-approve-btn:disabled { opacity:.5; cursor:default; }
@@ -1408,7 +1425,10 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                     };
                     const isChatOpen = chatApptId === appt.id;
                     return (
-                      <div className="da-card" key={appt.id}>
+                      <div
+                        className={`da-card${isAppointmentOverdue(appt) ? " overdue" : ""}`}
+                        key={appt.id}
+                      >
                         <div
                           className="da-card-header"
                           onClick={() =>
@@ -1438,15 +1458,17 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <span
-                              className={`da-badge ${endedSessions.has(appt.id) ? "ended" : appt.status}`}
+                              className={`da-badge ${isAppointmentOverdue(appt) ? "overdue" : endedSessions.has(appt.id) ? "ended" : appt.status}`}
                             >
-                              {endedSessions.has(appt.id)
-                                ? "⏹ Ended"
-                                : appt.status === "pending"
-                                  ? "⏳ Pending"
-                                  : appt.status === "confirmed"
-                                    ? "✅ Confirmed"
-                                    : "✔ Completed"}
+                              {isAppointmentOverdue(appt)
+                                ? "⏰ Overdue"
+                                : endedSessions.has(appt.id)
+                                  ? "⏹ Ended"
+                                  : appt.status === "pending"
+                                    ? "⏳ Pending"
+                                    : appt.status === "confirmed"
+                                      ? "✅ Confirmed"
+                                      : "✔ Completed"}
                             </span>
                             {appt.status === "pending" && (
                               <button

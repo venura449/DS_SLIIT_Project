@@ -19,11 +19,13 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
     const meetingWindow = window.open(
       meetingUrl,
       "jitsi-meeting-window",
-      features
+      features,
     );
 
     if (!meetingWindow) {
-      alert("We couldn't open the meeting window. Please enable pop-ups and try again.");
+      alert(
+        "We couldn't open the meeting window. Please enable pop-ups and try again.",
+      );
       return;
     }
 
@@ -65,8 +67,8 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
             <div style={styles.infoBody}>
               For security reasons, Jitsi Meet runs in its own browser window.
               When your browser shows a pop-up prompt, click "Allow" so the
-              meeting window can open. If it is blocked, enable pop-ups for
-              this site and try again.
+              meeting window can open. If it is blocked, enable pop-ups for this
+              site and try again.
             </div>
           </div>
         </div>
@@ -77,9 +79,9 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
           <li style={styles.step}>
             <span style={styles.stepNum}>1</span>
             <div>
-              Click <strong>"Open Meeting"</strong> below your consultation
-              room will open in a separate window. If you see a browser bar
-              about pop-ups, choose <strong>Allow</strong>.
+              Click <strong>"Open Meeting"</strong> below your consultation room
+              will open in a separate window. If you see a browser bar about
+              pop-ups, choose <strong>Allow</strong>.
             </div>
           </li>
           <li style={styles.step}>
@@ -142,9 +144,9 @@ const JitsiMeeting = ({ roomName, displayName, onClose }) => {
               </div>
             </div>
             <div style={styles.promptBody}>
-              We will open your Jitsi consultation in a separate browser
-              window for better reliability. If your browser blocks pop-ups,
-              please allow this site.
+              We will open your Jitsi consultation in a separate browser window
+              for better reliability. If your browser blocks pop-ups, please
+              allow this site.
             </div>
             <div style={styles.promptActions}>
               <button style={styles.promptCancel} onClick={handleCancelPrompt}>

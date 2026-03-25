@@ -57,9 +57,22 @@ function fmtDate(dateStr) {
   });
 }
 
+function isAppointmentOverdue(appointment) {
+  // Appointment is overdue if date has passed AND status is not completed/cancelled/ended
+  if (!appointment.appointment_date) return false;
+  const appointmentDate = new Date(appointment.appointment_date.split("T")[0]);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isDatePassed = appointmentDate < today;
+  const isNotCompleted = !["completed", "cancelled", "ended"].includes(
+    appointment.status,
+  );
+  return isDatePassed && isNotCompleted;
+}
+
 /* ── component ─────────────────────────────────────────────────── */
 
-const BookAppointment = () => {
+const BookAppointment = ({ hideOverdues = false }) => {
   const [view, setView] = useState("book"); // 'book' | 'my-bookings'
 
   // Doctor list
@@ -388,6 +401,9 @@ const BookAppointment = () => {
         .ba-filter-btn { padding:5px 14px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; }
         .ba-filter-btn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
         .ba-status-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
+        .ba-status-badge.overdue { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+        .ba-booking-card.overdue { opacity:.6; }
+        .ba-booking-card.overdue .ba-booking-icon { background:#fef2f2; border-color:#fca5a5; }
         .ba-cancel-btn { padding:5px 12px; border-radius:7px; border:1px solid #fca5a5; background:#fff1f1; color:#dc2626; font-size:11px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all .15s; flex-shrink:0; }
         .ba-cancel-btn:hover { background:#fee2e2; }
         .ba-cancel-btn:disabled { opacity:.5; cursor:default; }
@@ -674,46 +690,53 @@ const BookAppointment = () => {
                     : bookingFilter
                       ? myBookings.filter((b) => b.status === bookingFilter)
                       : myBookings;
-                if (fb.length === 0)
+                const filtered = hideOverdues
+                  ? fb.filter((b) => !isAppointmentOverdue(b))
+                  : fb;
+                if (filtered.length === 0)
                   return (
                     <div className="ba-bookings-empty">
                       <div className="ba-bookings-empty-icon">🔍</div>
                       <p>No appointments match this filter.</p>
                     </div>
                   );
-                return fb.map((b) => (
+                return filtered.map((b) => (
                   <React.Fragment key={b.id}>
                     <div
-                      className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}`}
+                      className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}${isAppointmentOverdue(b) ? " overdue" : ""}`}
                     >
                       <div
                         className={`ba-booking-icon${b.status === "cancelled" ? " cancelled" : ""}`}
                       >
-                        {b.status === "confirmed"
-                          ? "📅"
-                          : b.status === "completed"
-                            ? "✅"
-                            : "❌"}
+                        {isAppointmentOverdue(b)
+                          ? "⏰"
+                          : b.status === "confirmed"
+                            ? "📅"
+                            : b.status === "completed"
+                              ? "✅"
+                              : "❌"}
                       </div>
                       <div className="ba-booking-body">
                         <div className="ba-booking-doctor">
                           Dr. {b.doctor_name || "Doctor"}
                           <span
-                            className={`ba-status-badge ${endedSessions.has(b.id) ? "ended" : b.status}`}
+                            className={`ba-status-badge ${isAppointmentOverdue(b) ? "overdue" : endedSessions.has(b.id) ? "ended" : b.status}`}
                             style={{ marginLeft: 8 }}
                           >
-                            {endedSessions.has(b.id)
-                              ? "⏹ Ended"
-                              : b.status === "pending"
-                                ? "⏳ Awaiting Approval"
-                                : b.status === "confirmed"
-                                  ? "✅ Confirmed"
-                                  : b.status === "cancelled"
-                                    ? "❌ Cancelled"
-                                    : b.status === "completed"
-                                      ? "✔ Completed"
-                                      : b.status.charAt(0).toUpperCase() +
-                                        b.status.slice(1)}
+                            {isAppointmentOverdue(b)
+                              ? "⏰ Overdue"
+                              : endedSessions.has(b.id)
+                                ? "⏹ Ended"
+                                : b.status === "pending"
+                                  ? "⏳ Awaiting Approval"
+                                  : b.status === "confirmed"
+                                    ? "✅ Confirmed"
+                                    : b.status === "cancelled"
+                                      ? "❌ Cancelled"
+                                      : b.status === "completed"
+                                        ? "✔ Completed"
+                                        : b.status.charAt(0).toUpperCase() +
+                                          b.status.slice(1)}
                           </span>
                           {b.is_telemedicine && (
                             <span className="ba-tele-badge">
