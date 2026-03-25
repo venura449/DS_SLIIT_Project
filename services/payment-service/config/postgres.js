@@ -1,4 +1,4 @@
-const {Pool} = require('pg');
+const { Pool } = require('pg');
 const config = require('./database');
 
 const env = process.env.NODE_ENV || 'development';
@@ -27,10 +27,17 @@ const initializeDatabase = async () => {
                 END IF;
             END$$;`;
         await pool.query(createEnumQuery);
-        // Create payments table if it doesn't exist
+
+        // Drop existing table to recreate with correct schema
+        const dropTableQuery = `DROP TABLE IF EXISTS payments CASCADE;`;
+        await pool.query(dropTableQuery);
+        console.log('Dropped existing payments table');
+
+        // Create payments table with correct schema
         const createTableQuery = `
         CREATE TABLE IF NOT EXISTS payments (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            appointment_id VARCHAR(255),
             slot_id VARCHAR(255) NOT NULL,
             patient_id VARCHAR(255) NOT NULL,
             amount NUMERIC(10, 2) NOT NULL,

@@ -19,7 +19,7 @@ router.get('/users/:id', async (req, res) => {
         }
         res.status(200).json({
             success: true,
-            data: { id: user.id, name: user.name, phone: user.phone },
+            data: { id: user.id, name: user.name, phone: user.phone, email: user.email },
         });
     } catch (error) {
         console.error('Internal user lookup error:', error);

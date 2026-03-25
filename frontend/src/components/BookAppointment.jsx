@@ -120,7 +120,8 @@ const BookAppointment = ({ hideOverdues = false }) => {
   const chatEndRef = useRef(null);
 
   // Client secret for payment
-  const[clientSecret, setClientSecret] =useState(null);
+  const [clientSecret, setClientSecret] = useState(null);
+  const [consultationFee, setConsultationFee] = useState(0); // Track fee for payment overlay
 
   /* ── load doctors ────────────────────────────────────────────── */
 
@@ -191,12 +192,19 @@ const BookAppointment = ({ hideOverdues = false }) => {
     setBookingLoading(true);
     setBookingError("");
 
-    const result = await createPayment(bookingSlot.id, selectedDoctor.consultation_fee);
+    const fee = selectedDoctor?.consultation_fee || 100; // Default to 100 if not set
+    console.log("Booking with:", {
+      slotId: bookingSlot.id,
+      fee,
+      doctor: selectedDoctor,
+    });
 
-    if(result.success){
+    const result = await createPayment(bookingSlot.id, fee);
+
+    if (result.success) {
+      setConsultationFee(fee);
       setClientSecret(result.data.clientSecret);
-    }
-    else{
+    } else {
       setBookingError(result.error || "Payment initialization failed");
     }
 
@@ -215,7 +223,7 @@ const BookAppointment = ({ hideOverdues = false }) => {
         doctorName: selectedDoctor.name,
         patientName: getUserData()?.name || "",
         patientPhone: getUserData()?.phone || "",
-        isTelemedicine
+        isTelemedicine,
       });
 
       if (res.success) {
@@ -223,14 +231,13 @@ const BookAppointment = ({ hideOverdues = false }) => {
           doctor: selectedDoctor.name,
           date: fmtDate(bookingSlot.appointmentDate),
           time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
-          isTelemedicine
+          isTelemedicine,
         });
 
         setBookingSlot(null);
         setClientSecret(null);
         loadSlots(selectedDoctor, currentWeek);
       }
-
     } catch (err) {
       setBookingError(err.message || "Payment failed");
     }
@@ -1002,15 +1009,19 @@ const BookAppointment = ({ hideOverdues = false }) => {
             <Elements stripe={stripePromise} options={{ clientSecret }}>
               <PaymentForm
                 clientSecret={clientSecret}
+                amount={consultationFee}
                 onSuccess={handlePaymentSuccess}
-                onCancel={() => setClientSecret(null)}
+                onCancel={() => {
+                  setClientSecret(null);
+                  setConsultationFee(0);
+                }}
               />
             </Elements>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 };
 
 export default BookAppointment;
