@@ -3,11 +3,12 @@ version: "3.8"
 services:
   # Frontend - React Application
   frontend:
-    build: ../frontend
+    build:
+      context: ../frontend
+      args:
+        VITE_API_BASE_URL: http://gateway:3000/api
     ports:
       - "80:80"
-    environment:
-      VITE_API_BASE_URL: http://gateway:3000/api
     depends_on:
       - gateway
     networks:
@@ -191,7 +192,34 @@ services:
     networks:
       - healthcare-network
 
-  # AI Symptom Service
+  # ML Service (Python Flask - Model Training & Predictions)
+  ml-service:
+    build:
+      context: ../
+      dockerfile: services/ai-symptom-service/ml-integration/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: production
+      FLASK_APP: symptom_analyzer.py
+    networks:
+      - healthcare-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5000/api/symptoms/analyze",
+          "-X",
+          "POST",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # AI Symptom Service (Node.js API Proxy)
   ai-symptom-service:
     build: ../services/ai-symptom-service
     ports:
@@ -199,6 +227,7 @@ services:
     environment:
       PORT: 3008
       NODE_ENV: development
+      ML_SERVICE_URL: http://ml-service:5000
       DB_HOST: postgres-ai
       DB_PORT: 5432
       DB_NAME: ai_symptom_db
@@ -206,6 +235,7 @@ services:
       DB_PASSWORD: password
     depends_on:
       - postgres-ai
+      - ml-service
     networks:
       - healthcare-network
 

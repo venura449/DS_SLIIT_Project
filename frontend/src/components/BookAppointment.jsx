@@ -7,6 +7,7 @@ import { getUserData } from "../utils/authService";
 import { Elements } from "@stripe/react-stripe-js";
 import JitsiMeeting from "./JitsiMeeting";
 import stripePromise from "../utils/stripeService";
+import ChatBubbleButton from "./ChatBubbleButton";
 
 /* ── constants ─────────────────────────────────────────────────── */
 
@@ -1020,6 +1021,8 @@ const BookAppointment = ({ hideOverdues = false }) => {
           </div>
         </div>
       )}
+
+      <ChatBubbleButton />
     </div>
   );
 };

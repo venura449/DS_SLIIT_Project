@@ -7,6 +7,8 @@ import UpdateProfileForm from "../UpdateProfileForm";
 import BookAppointment from "../BookAppointment";
 import MedicalRecords from "../MedicalRecords";
 import PatientPrescriptions from "../PatientPrescriptions";
+import NotificationBell from "../NotificationBell";
+import ChatBubbleButton from "../ChatBubbleButton";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -518,6 +520,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           <header className="pd-topbar">
             <span className="pd-topbar-title">{pageTitles[activeTab]}</span>
             <div className="pd-topbar-right">
+              <NotificationBell userId={user?.id} />
               <button
                 className="pd-profile-btn"
                 onClick={() => setShowProfile(true)}
@@ -954,6 +957,8 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           onSuccess={handleProfileUpdate}
         />
       )}
+
+      <ChatBubbleButton />
     </>
   );
 };
