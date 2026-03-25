@@ -467,7 +467,15 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           <div className="pd-brand">
             <div className="pd-brand-row">
               <div className="pd-brand-icon">
-                <img src="/src/assets/favicon.png" alt="MediConnect Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img
+                  src="/src/assets/favicon.png"
+                  alt="MediConnect Logo"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
               </div>
               <div>
                 <div className="pd-brand-name">

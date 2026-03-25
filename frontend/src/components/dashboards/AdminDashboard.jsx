@@ -1748,7 +1748,15 @@ const AdminDashboard = ({ user: initialUser, onLogout }) => {
           <div className="ad-brand">
             <div className="ad-brand-row">
               <div className="ad-brand-icon">
-                <img src="/src/assets/favicon.png" alt="MediConnect Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img
+                  src="/src/assets/favicon.png"
+                  alt="MediConnect Logo"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
               </div>
               <div>
                 <div className="ad-brand-name">

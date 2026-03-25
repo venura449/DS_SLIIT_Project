@@ -400,7 +400,11 @@ const LoginForm = ({ onLogin }) => {
         <div className="login-panel-left">
           <div className="brand">
             <div className="brand-icon">
-              <img src="/src/assets/favicon.png" alt="MediConnect Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <img
+                src="/src/assets/favicon.png"
+                alt="MediConnect Logo"
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              />
             </div>
             <div className="brand-name">
               Medi<span>Connect</span>
