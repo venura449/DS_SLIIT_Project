@@ -114,3 +114,4 @@ const markAllAsRead = async (req, res) => {
             markAsRead,
             markAllAsRead
     };
+}
