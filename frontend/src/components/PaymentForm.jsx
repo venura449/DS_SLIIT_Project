@@ -1,4 +1,10 @@
-import { CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import {
+  CardNumberElement,
+  CardExpiryElement,
+  CardCvcElement,
+  useStripe,
+  useElements,
+} from "@stripe/react-stripe-js";
 import { useState } from "react";
 
 const PaymentForm = ({ clientSecret, onSuccess, onCancel, amount = 0 }) => {
@@ -68,7 +74,7 @@ const PaymentForm = ({ clientSecret, onSuccess, onCancel, amount = 0 }) => {
     try {
       const result = await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
-          card: elements.getElement(CardElement),
+          card: elements.getElement(CardNumberElement),
         },
       });
 
@@ -361,7 +367,35 @@ const PaymentForm = ({ clientSecret, onSuccess, onCancel, amount = 0 }) => {
                 transition: "all 0.2s",
               }}
             >
-              <CardElement options={cardStyle} onChange={handleCardChange} />
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+  
+                    {/* Card Number */}
+                    <div>
+                        <label className="label">Card Number</label>
+                        <div className="inputBox">
+                        <CardNumberElement options={cardStyle} onChange={handleCardChange} />
+                        </div>
+                    </div>
+
+                    {/* Expiry + CVC row */}
+                    <div style={{ display: "flex", gap: "12px" }}>
+                        
+                        <div style={{ flex: 1 }}>
+                        <label className="label">Expiry Date</label>
+                        <div className="inputBox">
+                            <CardExpiryElement options={cardStyle} onChange={handleCardChange} />
+                        </div>
+                        </div>
+
+                        <div style={{ flex: 1 }}>
+                        <label className="label">CVC</label>
+                        <div className="inputBox">
+                            <CardCvcElement options={cardStyle} onChange={handleCardChange} />
+                        </div>
+                        </div>
+
+                    </div>
+                </div>
             </div>
           </div>
 
