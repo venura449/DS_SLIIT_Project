@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const ctrl = require('../controllers/medicalRecordController');
-const { authMiddleware } = require('../middlewares/authMiddleware');
+const { authMiddleware, requireRole } = require('../middlewares/authMiddleware');
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -19,7 +19,7 @@ router.post('/', authMiddleware, upload.single('file'), ctrl.uploadRecord);
 router.get('/', authMiddleware, ctrl.getMyRecords);
 router.delete('/:id', authMiddleware, ctrl.deleteRecord);
 
-// Doctor — view records of a specific patient (any authenticated user with a valid token)
-router.get('/patient/:patientId', authMiddleware, ctrl.getPatientRecords);
+// Doctor/Admin — view records of a specific patient
+router.get('/patient/:patientId', authMiddleware, requireRole('doctor', 'admin'), ctrl.getPatientRecords);
 
 module.exports = router;
