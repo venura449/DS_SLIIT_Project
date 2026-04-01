@@ -110,8 +110,13 @@ const markAllAsRead = async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error marking all notifications as read:', error.message);
-        sendNotification,
-            markAsRead,
-            markAllAsRead
-    };
-}
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+module.exports = {
+    getNotifications,
+    sendNotification,
+    markAsRead,
+    markAllAsRead
+};

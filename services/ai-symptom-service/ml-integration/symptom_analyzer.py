@@ -3,8 +3,10 @@ Python AI Symptom Analyzer Service
 Exposes the Decision Tree model via REST API
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Histogram, REGISTRY
+import time
 import joblib
 import numpy as np
 import os
@@ -13,6 +15,27 @@ from pathlib import Path
 
 app = Flask(__name__)
 CORS(app)
+
+# Prometheus metrics
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['endpoint'])
+
+@app.before_request
+def before_request():
+    from flask import g, request
+    g.start_time = time.time()
+
+@app.after_request
+def after_request(response):
+    from flask import g, request
+    latency = time.time() - g.start_time
+    REQUEST_COUNT.labels(method=request.method, endpoint=request.path, status=response.status_code).inc()
+    REQUEST_LATENCY.labels(endpoint=request.path).observe(latency)
+    return response
+
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
 # Load the model and supporting data
 try:

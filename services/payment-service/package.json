@@ -1,34 +1,35 @@
 {
-  "name": "payment-service",
-  "version": "1.0.0",
-  "description": "Payment Service for Smart Healthcare Platform",
-  "main": "Server.js",
-  "scripts": {
-    "start": "node Server.js",
-    "dev": "nodemon Server.js",
-    "test": "jest --coverage"
-  },
-  "keywords": [
-    "payment",
-    "stripe",
-    "healthcare"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "axios": "^1.4.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.3",
-    "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.3",
-    "kafkajs": "^2.2.4",
-    "morgan": "^1.10.0",
-    "pg": "^8.19.0",
-    "stripe": "^12.0.0"
-  },
-  "devDependencies": {
-    "jest": "^29.5.0",
-    "nodemon": "^2.0.22",
-    "supertest": "^6.3.3"
-  }
+    "name":  "payment-service",
+    "version":  "1.0.0",
+    "description":  "Payment Service for Smart Healthcare Platform",
+    "main":  "Server.js",
+    "scripts":  {
+                    "start":  "node Server.js",
+                    "dev":  "nodemon Server.js",
+                    "test":  "jest --coverage"
+                },
+    "keywords":  [
+                     "payment",
+                     "stripe",
+                     "healthcare"
+                 ],
+    "author":  "",
+    "license":  "MIT",
+    "dependencies":  {
+                         "axios":  "^1.4.0",
+                         "cors":  "^2.8.5",
+                         "dotenv":  "^16.0.3",
+                         "express":  "^4.18.2",
+                         "jsonwebtoken":  "^9.0.3",
+                         "kafkajs":  "^2.2.4",
+                         "morgan":  "^1.10.0",
+                         "pg":  "^8.19.0",
+                         "stripe":  "^12.0.0",
+                         "prom-client":  "^15.1.0"
+                     },
+    "devDependencies":  {
+                            "jest":  "^29.5.0",
+                            "nodemon":  "^2.0.22",
+                            "supertest":  "^6.3.3"
+                        }
 }

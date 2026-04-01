@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-symptom-service
+  namespace: healthcare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-symptom-service
+  template:
+    metadata:
+      labels:
+        app: ai-symptom-service
+    spec:
+      containers:
+        - name: ai-symptom-service
+          image: healthcare/ai-symptom-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3008
+          env:
+            - name: PORT
+              value: "3008"
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: service-urls
+                  key: NODE_ENV
+            - name: ML_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: service-urls
+                  key: ML_SERVICE_URL
+            - name: DB_HOST
+              value: postgres-ai
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: ai_symptom_db
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3008
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3008
+            initialDelaySeconds: 40
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-symptom-service
+  namespace: healthcare
+spec:
+  selector:
+    app: ai-symptom-service
+  ports:
+    - port: 3008
+      targetPort: 3008

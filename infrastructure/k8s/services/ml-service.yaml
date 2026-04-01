@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-service
+  namespace: healthcare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-service
+  template:
+    metadata:
+      labels:
+        app: ml-service
+    spec:
+      containers:
+        - name: ml-service
+          # Built from services/ai-symptom-service/ml-integration/Dockerfile
+          image: healthcare/ml-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          env:
+            - name: FLASK_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: service-urls
+                  key: FLASK_ENV
+            - name: FLASK_APP
+              valueFrom:
+                configMapKeyRef:
+                  name: service-urls
+                  key: FLASK_APP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-service
+  namespace: healthcare
+spec:
+  selector:
+    app: ml-service
+  ports:
+    - port: 5000
+      targetPort: 5000

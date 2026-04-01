@@ -2,6 +2,9 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const client = require('prom-client');
+const promRegister = new client.Registry();
+client.collectDefaultMetrics({ register: promRegister });
 const { initializeConsumer, disconnectConsumer } = require('./config/kafka');
 
 // Load environment variables
@@ -22,6 +25,12 @@ app.use('/api/notifications', notificationRoutes);
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'Notification Service is running' });
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', promRegister.contentType);
+    res.end(await promRegister.metrics());
 });
 
 // Error handling middleware

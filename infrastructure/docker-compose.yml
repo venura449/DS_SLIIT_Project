@@ -356,6 +356,74 @@ services:
     networks:
       - healthcare-network
 
+  # ─── Monitoring Stack ──────────────────────────────────────────────────────
+
+  # Prometheus - metrics collection
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    networks:
+      - healthcare-network
+    restart: unless-stopped
+
+  # Grafana - metrics visualization
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3009:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - healthcare-network
+    restart: unless-stopped
+
+  # Docker Stats Exporter - container CPU/memory/network metrics via Docker API
+  # Replaces cAdvisor which does not work on Docker Desktop for Windows
+  docker-stats-exporter:
+    build:
+      context: ./monitoring/docker-stats-exporter
+    ports:
+      - "9338:9338"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - healthcare-network
+    restart: unless-stopped
+
+  # Node Exporter - host OS metrics
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - healthcare-network
+    restart: unless-stopped
+
 volumes:
   auth_db_data:
   patient_db_data:
@@ -366,6 +434,8 @@ volumes:
   telemedicine_db_data:
   payment_db_data:
   ai_db_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   healthcare-network:
