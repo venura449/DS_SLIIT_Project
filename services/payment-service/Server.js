@@ -2,6 +2,9 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const client = require('prom-client');
+const promRegister = new client.Registry();
+client.collectDefaultMetrics({ register: promRegister });
 const { initializeProducer, disconnectProducer } = require('./config/kafka');
 const { initializeDatabase } = require('./config/postgres');
 
@@ -24,6 +27,12 @@ app.use('/api', paymentRoutes);
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'Payment Service is running' });
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', promRegister.contentType);
+    res.end(await promRegister.metrics());
 });
 
 // Error handling middleware

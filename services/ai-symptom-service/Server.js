@@ -2,6 +2,9 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
+const client = require('prom-client');
+const promRegister = new client.Registry();
+client.collectDefaultMetrics({ register: promRegister });
 
 // Load environment variables
 dotenv.config();
@@ -16,11 +19,17 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Routes
 const aiSymptomRoutes = require('./routes/aiSymptomRoutes');
-app.use('/api/ai-symptoms', aiSymptomRoutes);
+app.use('/', aiSymptomRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'AI Symptom Service is running' });
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', promRegister.contentType);
+    res.end(await promRegister.metrics());
 });
 
 // Error handling middleware
@@ -36,8 +45,10 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3008;
 
-const server = app.listen(PORT, () => {
-    console.log(`AI Symptom Service running on port ${PORT}`);
-});
+if (require.main === module) {
+    const server = app.listen(PORT, () => {
+        console.log(`AI Symptom Service running on port ${PORT}`);
+    });
+}
 
-module.exports = server;
+module.exports = app;

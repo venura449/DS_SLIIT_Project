@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import * as appointmentService from "../utils/appointmentService";
 import * as telemedicineService from "../utils/telemedicineService";
+import PaymentForm from "./PaymentForm";
+import { createPayment } from "../utils/paymentService";
 import { getUserData } from "../utils/authService";
+import { Elements } from "@stripe/react-stripe-js";
 import JitsiMeeting from "./JitsiMeeting";
+import stripePromise from "../utils/stripeService";
+import ChatBubbleButton from "./ChatBubbleButton";
 
 /* ── constants ─────────────────────────────────────────────────── */
 
 const DAYS = [
-  { label: "Monday", value: 1 },
-  { label: "Tuesday", value: 2 },
-  { label: "Wednesday", value: 3 },
-  { label: "Thursday", value: 4 },
-  { label: "Friday", value: 5 },
-  { label: "Saturday", value: 6 },
-  { label: "Sunday", value: 0 },
+  { label: "Sunday", value: 1 },
+  { label: "Monday", value: 2 },
+  { label: "Tuesday", value: 3 },
+  { label: "Wednesday", value: 4 },
+  { label: "Thursday", value: 5 },
+  { label: "Friday", value: 6 },
+  { label: "Saturday", value: 0 },
 ];
 
 /* ── helpers ───────────────────────────────────────────────────── */
@@ -57,9 +62,22 @@ function fmtDate(dateStr) {
   });
 }
 
+function isAppointmentOverdue(appointment) {
+  // Appointment is overdue if date has passed AND status is not completed/cancelled/ended
+  if (!appointment.appointment_date) return false;
+  const appointmentDate = new Date(appointment.appointment_date.split("T")[0]);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isDatePassed = appointmentDate < today;
+  const isNotCompleted = !["completed", "cancelled", "ended"].includes(
+    appointment.status,
+  );
+  return isDatePassed && isNotCompleted;
+}
+
 /* ── component ─────────────────────────────────────────────────── */
 
-const BookAppointment = () => {
+const BookAppointment = ({ hideOverdues = false }) => {
   const [view, setView] = useState("book"); // 'book' | 'my-bookings'
 
   // Doctor list
@@ -101,6 +119,10 @@ const BookAppointment = () => {
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const chatEndRef = useRef(null);
+
+  // Client secret for payment
+  const [clientSecret, setClientSecret] = useState(null);
+  const [consultationFee, setConsultationFee] = useState(0); // Track fee for payment overlay
 
   /* ── load doctors ────────────────────────────────────────────── */
 
@@ -170,33 +192,56 @@ const BookAppointment = () => {
   const handleBook = async () => {
     setBookingLoading(true);
     setBookingError("");
-    const res = await appointmentService.createBooking({
-      doctorId: selectedDoctor.doctor_id,
+
+    const fee = selectedDoctor?.consultation_fee || 100; // Default to 100 if not set
+    console.log("Booking with:", {
       slotId: bookingSlot.id,
-      appointmentDate: bookingSlot.appointmentDate,
-      startTime: bookingSlot.start_time.substring(0, 5),
-      endTime: bookingSlot.end_time.substring(0, 5),
-      reason: bookingReason,
-      doctorName: selectedDoctor.name,
-      patientName: getUserData()?.name || "",
-      patientPhone: getUserData()?.phone || "",
-      isTelemedicine,
+      fee,
+      doctor: selectedDoctor,
     });
-    if (res.success) {
-      setBookingSuccess({
-        doctor: selectedDoctor.name,
-        date: fmtDate(bookingSlot.appointmentDate),
-        time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
+
+    const result = await createPayment(bookingSlot.id, fee);
+
+    if (result.success) {
+      setConsultationFee(fee);
+      setClientSecret(result.data.clientSecret);
+    } else {
+      setBookingError(result.error || "Payment initialization failed");
+    }
+
+    setBookingLoading(false);
+  };
+
+  const handlePaymentSuccess = async () => {
+    try {
+      const res = await appointmentService.createBooking({
+        doctorId: selectedDoctor.doctor_id,
+        slotId: bookingSlot.id,
+        appointmentDate: bookingSlot.appointmentDate,
+        startTime: bookingSlot.start_time.substring(0, 5),
+        endTime: bookingSlot.end_time.substring(0, 5),
+        reason: bookingReason,
+        doctorName: selectedDoctor.name,
+        patientName: getUserData()?.name || "",
+        patientPhone: getUserData()?.phone || "",
         isTelemedicine,
       });
-      setBookingSlot(null);
-      setIsTelemedicine(false);
-      // Refresh slots to reflect the booking
-      loadSlots(selectedDoctor, currentWeek);
-    } else {
-      setBookingError(res.error);
+
+      if (res.success) {
+        setBookingSuccess({
+          doctor: selectedDoctor.name,
+          date: fmtDate(bookingSlot.appointmentDate),
+          time: `${fmt12(bookingSlot.start_time)} – ${fmt12(bookingSlot.end_time)}`,
+          isTelemedicine,
+        });
+
+        setBookingSlot(null);
+        setClientSecret(null);
+        loadSlots(selectedDoctor, currentWeek);
+      }
+    } catch (err) {
+      setBookingError(err.message || "Payment failed");
     }
-    setBookingLoading(false);
   };
 
   /* ── join telemedicine meeting ─────────────────────────────── */
@@ -388,6 +433,9 @@ const BookAppointment = () => {
         .ba-filter-btn { padding:5px 14px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; }
         .ba-filter-btn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
         .ba-status-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
+        .ba-status-badge.overdue { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+        .ba-booking-card.overdue { opacity:.6; }
+        .ba-booking-card.overdue .ba-booking-icon { background:#fef2f2; border-color:#fca5a5; }
         .ba-cancel-btn { padding:5px 12px; border-radius:7px; border:1px solid #fca5a5; background:#fff1f1; color:#dc2626; font-size:11px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all .15s; flex-shrink:0; }
         .ba-cancel-btn:hover { background:#fee2e2; }
         .ba-cancel-btn:disabled { opacity:.5; cursor:default; }
@@ -674,46 +722,53 @@ const BookAppointment = () => {
                     : bookingFilter
                       ? myBookings.filter((b) => b.status === bookingFilter)
                       : myBookings;
-                if (fb.length === 0)
+                const filtered = hideOverdues
+                  ? fb.filter((b) => !isAppointmentOverdue(b))
+                  : fb;
+                if (filtered.length === 0)
                   return (
                     <div className="ba-bookings-empty">
                       <div className="ba-bookings-empty-icon">🔍</div>
                       <p>No appointments match this filter.</p>
                     </div>
                   );
-                return fb.map((b) => (
+                return filtered.map((b) => (
                   <React.Fragment key={b.id}>
                     <div
-                      className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}`}
+                      className={`ba-booking-card${b.status === "cancelled" ? " cancelled" : ""}${isAppointmentOverdue(b) ? " overdue" : ""}`}
                     >
                       <div
                         className={`ba-booking-icon${b.status === "cancelled" ? " cancelled" : ""}`}
                       >
-                        {b.status === "confirmed"
-                          ? "📅"
-                          : b.status === "completed"
-                            ? "✅"
-                            : "❌"}
+                        {isAppointmentOverdue(b)
+                          ? "⏰"
+                          : b.status === "confirmed"
+                            ? "📅"
+                            : b.status === "completed"
+                              ? "✅"
+                              : "❌"}
                       </div>
                       <div className="ba-booking-body">
                         <div className="ba-booking-doctor">
                           Dr. {b.doctor_name || "Doctor"}
                           <span
-                            className={`ba-status-badge ${endedSessions.has(b.id) ? "ended" : b.status}`}
+                            className={`ba-status-badge ${isAppointmentOverdue(b) ? "overdue" : endedSessions.has(b.id) ? "ended" : b.status}`}
                             style={{ marginLeft: 8 }}
                           >
-                            {endedSessions.has(b.id)
-                              ? "⏹ Ended"
-                              : b.status === "pending"
-                                ? "⏳ Awaiting Approval"
-                                : b.status === "confirmed"
-                                  ? "✅ Confirmed"
-                                  : b.status === "cancelled"
-                                    ? "❌ Cancelled"
-                                    : b.status === "completed"
-                                      ? "✔ Completed"
-                                      : b.status.charAt(0).toUpperCase() +
-                                        b.status.slice(1)}
+                            {isAppointmentOverdue(b)
+                              ? "⏰ Overdue"
+                              : endedSessions.has(b.id)
+                                ? "⏹ Ended"
+                                : b.status === "pending"
+                                  ? "⏳ Awaiting Approval"
+                                  : b.status === "confirmed"
+                                    ? "✅ Confirmed"
+                                    : b.status === "cancelled"
+                                      ? "❌ Cancelled"
+                                      : b.status === "completed"
+                                        ? "✔ Completed"
+                                        : b.status.charAt(0).toUpperCase() +
+                                          b.status.slice(1)}
                           </span>
                           {b.is_telemedicine && (
                             <span className="ba-tele-badge">
@@ -945,6 +1000,29 @@ const BookAppointment = () => {
           </div>
         </div>
       )}
+
+      {/* ══════════════════ STRIPE PAYMENT MODAL ══════════════════ */}
+      {clientSecret && (
+        <div className="ba-overlay">
+          <div className="ba-modal">
+            <div className="ba-modal-title">Complete Payment</div>
+
+            <Elements stripe={stripePromise} options={{ clientSecret }}>
+              <PaymentForm
+                clientSecret={clientSecret}
+                amount={consultationFee}
+                onSuccess={handlePaymentSuccess}
+                onCancel={() => {
+                  setClientSecret(null);
+                  setConsultationFee(0);
+                }}
+              />
+            </Elements>
+          </div>
+        </div>
+      )}
+
+      <ChatBubbleButton />
     </div>
   );
 };

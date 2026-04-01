@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getPatientPrescriptions } from "../utils/prescriptionService";
+import ChatBubbleButton from "./ChatBubbleButton";
 
 const fmt12 = (t) => {
   if (!t) return "";
@@ -304,6 +305,8 @@ const PatientPrescriptions = () => {
           <PrescriptionCard key={p.id} prescription={p} />
         ))
       )}
+
+      <ChatBubbleButton />
     </div>
   );
 };

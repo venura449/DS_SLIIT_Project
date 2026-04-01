@@ -43,6 +43,19 @@ const pageTitles = {
   profile: "Doctor Profile",
 };
 
+const isAppointmentOverdue = (appointment) => {
+  // Appointment is overdue if date has passed AND status is not completed/cancelled/ended
+  if (!appointment.appointment_date) return false;
+  const appointmentDate = new Date(appointment.appointment_date.split("T")[0]);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isDatePassed = appointmentDate < today;
+  const isNotCompleted = !["completed", "cancelled", "ended"].includes(
+    appointment.status,
+  );
+  return isDatePassed && isNotCompleted;
+};
+
 const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showProfile, setShowProfile] = useState(false);
@@ -96,6 +109,21 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [patientRecords, setPatientRecords] = useState([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsPatientId, setRecordsPatientId] = useState(null);
+
+  // Patients tab - favorite patients
+  const [patients, setPatients] = useState([]);
+  const [favoritePatientIds, setFavoritePatientIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem("doctorFavoritePatients");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const [patientsLoading, setPatientsLoading] = useState(false);
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientCurrentPage, setPatientCurrentPage] = useState(1);
+  const patientItemsPerPage = 10;
 
   // Load doctor public profile when the profile tab is opened
   useEffect(() => {
@@ -197,6 +225,47 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
       setApptLoading(false);
     });
   }, [activeTab, apptFilter]);
+
+  // Load patients when patients tab is opened
+  useEffect(() => {
+    if (activeTab !== "patients") return;
+    setPatientsLoading(true);
+    // Fetch all appointments to extract unique patients
+    appointmentService.getDoctorAppointments("").then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        // Extract unique patients from appointments (now enriched with patient_email)
+        const patientMap = new Map();
+        res.data.forEach((appt) => {
+          if (appt.patient_id && appt.patient_name) {
+            if (!patientMap.has(appt.patient_id)) {
+              patientMap.set(appt.patient_id, {
+                id: appt.patient_id,
+                name: appt.patient_name,
+                email: appt.patient_email || "",
+                lastAppointment: appt.appointment_date,
+                appointmentCount: 1,
+              });
+            } else {
+              const patient = patientMap.get(appt.patient_id);
+              patient.appointmentCount = (patient.appointmentCount || 1) + 1;
+              // Update email if we get it from a later appointment
+              if (!patient.email && appt.patient_email) {
+                patient.email = appt.patient_email;
+              }
+              if (
+                new Date(appt.appointment_date) >
+                new Date(patient.lastAppointment)
+              ) {
+                patient.lastAppointment = appt.appointment_date;
+              }
+            }
+          }
+        });
+        setPatients(Array.from(patientMap.values()));
+      }
+      setPatientsLoading(false);
+    });
+  }, [activeTab]);
 
   // Scroll chat to bottom when messages change
   useEffect(() => {
@@ -335,6 +404,23 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
   const handleUploadError = (documentType, error) => {
     setUploadError(`Error uploading ${documentType}: ${error}`);
+  };
+
+  const toggleFavoritePatient = (patientId) => {
+    setFavoritePatientIds((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(patientId)) {
+        updated.delete(patientId);
+      } else {
+        updated.add(patientId);
+      }
+      // Save to localStorage
+      localStorage.setItem(
+        "doctorFavoritePatients",
+        JSON.stringify(Array.from(updated)),
+      );
+      return updated;
+    });
   };
 
   const handleSubmitForVerification = async () => {
@@ -688,7 +774,17 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         <aside className="dd-sidebar">
           <div className="dd-brand">
             <div className="dd-brand-row">
-              <div className="dd-brand-icon">🏥</div>
+              <div className="dd-brand-icon">
+                <img
+                  src="/src/assets/favicon.png"
+                  alt="MediConnect Logo"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+              </div>
               <div>
                 <div className="dd-brand-name">
                   Medi<span>Connect</span>
@@ -747,14 +843,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
             {activeTab === "overview" && (
               <>
                 <div className="dd-page-head">
-                  <h2>Welcome, Dr. {user?.name || "Doctor"} ðŸ‘‹</h2>
+                  <h2>Welcome, Dr. {user?.name || "Doctor"}</h2>
                   <p>Here's a summary of your activity today.</p>
                 </div>
                 <div className="dd-stats">
                   <div className="dd-stat">
                     <div className="dd-stat-top">
                       <div className="dd-stat-label">Today's Appointments</div>
-                      <div className="dd-stat-icon">ðŸ“…</div>
+                      <div className="dd-stat-icon">📅</div>
                     </div>
                     <div className="dd-stat-value">0</div>
                     <div className="dd-stat-sub">None scheduled</div>
@@ -762,7 +858,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   <div className="dd-stat">
                     <div className="dd-stat-top">
                       <div className="dd-stat-label">Total Patients</div>
-                      <div className="dd-stat-icon">ðŸ‘¥</div>
+                      <div className="dd-stat-icon">👥</div>
                     </div>
                     <div className="dd-stat-value">0</div>
                     <div className="dd-stat-sub">No patients yet</div>
@@ -770,7 +866,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   <div className="dd-stat">
                     <div className="dd-stat-top">
                       <div className="dd-stat-label">Consultations</div>
-                      <div className="dd-stat-icon">ðŸ’¬</div>
+                      <div className="dd-stat-icon">💬</div>
                     </div>
                     <div className="dd-stat-value">0</div>
                     <div className="dd-stat-sub">No active sessions</div>
@@ -793,16 +889,560 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
             {activeTab === "patients" && (
               <>
+                <style>{`
+                  .dp-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
+                  .dp-filter-btn { padding:6px 16px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; }
+                  .dp-filter-btn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
+                  .dp-section-title { font-family:'Sora',sans-serif; font-size:14px; font-weight:700; color:#0a3d62; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
+                  .dp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+                  .dp-card { background:#fff; border:1.5px solid #e4eaf0; border-radius:12px; overflow:hidden; padding:16px; transition:all .2s; position:relative; }
+                  .dp-card:hover { box-shadow:0 4px 12px rgba(10,61,98,0.12); border-color:#7dd8f8; }
+                  .dp-card.favorite { border-color:#fbbf24; background:#fffbf0; }
+                  .dp-favorite-btn { position:absolute; top:12px; right:12px; background:none; border:none; font-size:20px; cursor:pointer; transition:all .2s; padding:0; width:32px; height:32px; display:flex; align-items:center; justify-content:center; }
+                  .dp-favorite-btn:hover { transform:scale(1.2); }
+                  .dp-header { display:flex; align-items:flex-start; gap:12px; margin-bottom:14px; padding-right:32px; }
+                  .dp-avatar { width:48px; height:48px; border-radius:8px; background:linear-gradient(135deg,#1a6fa0,#3b9ed9); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px; flex-shrink:0; }
+                  .dp-info { flex:1; min-width:0; }
+                  .dp-name { font-size:15px; font-weight:700; color:#0a3d62; margin-bottom:2px; }
+                  .dp-email { font-size:12px; color:#7a8fa6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                  .dp-meta { display:flex; gap:12px; margin-top:10px; padding-top:10px; border-top:1px solid #f0f4f8; }
+                  .dp-meta-item { font-size:11px; color:#7a8fa6; }
+                  .dp-meta-item strong { color:#0a3d62; font-weight:700; display:block; }
+                  .dp-badges { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+                  .dp-badge { display:inline-flex; align-items:center; gap:4px; padding:4px 8px; border-radius:20px; background:#eff6ff; color:#1d4ed8; font-size:11px; font-weight:700; border:1px solid #93c5fd; }
+                  .dp-empty { text-align:center; padding:40px 24px; }
+                  .dp-empty-icon { font-size:48px; margin-bottom:12px; opacity:0.5; }
+                  .dp-empty-text { font-size:14px; color:#7a8fa6; }
+                `}</style>
                 <div className="dd-page-head">
                   <h2>Patients</h2>
                   <p>View and manage your registered patients.</p>
                 </div>
-                <div className="dd-section">
-                  <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ‘¥</div>
-                    <p>No patients yet.</p>
+
+                {patientsLoading ? (
+                  <div className="dd-section">
+                    <div className="dp-empty">
+                      <div style={{ fontSize: "16px", color: "#7a8fa6" }}>
+                        Loading patients…
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : patients.length === 0 ? (
+                  <div className="dd-section">
+                    <div className="dp-empty">
+                      <div className="dp-empty-icon">👥</div>
+                      <p className="dp-empty-text">No patients yet.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {favoritePatientIds.size > 0 && (
+                      <div className="dd-section">
+                        <div className="dp-section-title">
+                          ⭐ Favorite Patients
+                        </div>
+                        <div className="dp-grid">
+                          {patients
+                            .filter((p) => favoritePatientIds.has(p.id))
+                            .map((patient) => {
+                              const initials = patient.name
+                                .split(" ")
+                                .map((w) => w[0])
+                                .join("")
+                                .toUpperCase()
+                                .slice(0, 2);
+                              const lastApptDate = patient.lastAppointment
+                                ? new Date(
+                                    patient.lastAppointment,
+                                  ).toLocaleDateString("en-US", {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  })
+                                : "No appointments";
+                              return (
+                                <div
+                                  key={patient.id}
+                                  className={`dp-card favorite`}
+                                >
+                                  <button
+                                    className="dp-favorite-btn"
+                                    onClick={() =>
+                                      toggleFavoritePatient(patient.id)
+                                    }
+                                    title="Remove from favorites"
+                                  >
+                                    ⭐
+                                  </button>
+                                  <div className="dp-header">
+                                    <div className="dp-avatar">{initials}</div>
+                                    <div className="dp-info">
+                                      <div className="dp-name">
+                                        {patient.name}
+                                      </div>
+                                      {patient.email && (
+                                        <div className="dp-email">
+                                          {patient.email}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="dp-meta">
+                                    <div className="dp-meta-item">
+                                      <strong>
+                                        {patient.appointmentCount}
+                                      </strong>
+                                      Appointment
+                                      {patient.appointmentCount !== 1
+                                        ? "s"
+                                        : ""}
+                                    </div>
+                                    <div
+                                      className="dp-meta-item"
+                                      style={{ marginLeft: "auto" }}
+                                    >
+                                      <strong>Last Visit</strong>
+                                      {lastApptDate}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="dd-section">
+                      <div className="dp-section-title">All Patients</div>
+
+                      {/* Search bar */}
+                      <div style={{ marginBottom: "16px" }}>
+                        <input
+                          type="text"
+                          placeholder="Search patients by name or email..."
+                          value={patientSearch}
+                          onChange={(e) => {
+                            setPatientSearch(e.target.value);
+                            setPatientCurrentPage(1);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "10px 14px",
+                            border: "1.5px solid #e4eaf0",
+                            borderRadius: "8px",
+                            fontSize: "13px",
+                            fontFamily: "'DM Sans', sans-serif",
+                            outline: "none",
+                            transition: "border-color 0.2s",
+                            background: "#fff",
+                            color: "#1a3a52",
+                          }}
+                          onFocus={(e) =>
+                            (e.target.style.borderColor = "#1a6fa0")
+                          }
+                          onBlur={(e) =>
+                            (e.target.style.borderColor = "#e4eaf0")
+                          }
+                        />
+                      </div>
+
+                      {/* Table */}
+                      {(() => {
+                        // Filter non-favorited patients based on search
+                        const filteredPatients = patients
+                          .filter((p) => !favoritePatientIds.has(p.id))
+                          .filter(
+                            (p) =>
+                              p.name
+                                .toLowerCase()
+                                .includes(patientSearch.toLowerCase()) ||
+                              (p.email &&
+                                p.email
+                                  .toLowerCase()
+                                  .includes(patientSearch.toLowerCase())),
+                          );
+
+                        const totalPages = Math.ceil(
+                          filteredPatients.length / patientItemsPerPage,
+                        );
+                        const startIndex =
+                          (patientCurrentPage - 1) * patientItemsPerPage;
+                        const paginatedPatients = filteredPatients.slice(
+                          startIndex,
+                          startIndex + patientItemsPerPage,
+                        );
+
+                        if (filteredPatients.length === 0) {
+                          return (
+                            <div className="dp-empty">
+                              <div className="dp-empty-icon">👥</div>
+                              <p className="dp-empty-text">
+                                {patientSearch
+                                  ? "No patients found matching your search."
+                                  : "No non-favorited patients."}
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <>
+                            <div
+                              style={{
+                                overflowX: "auto",
+                                borderRadius: "8px",
+                                border: "1.5px solid #e4eaf0",
+                              }}
+                            >
+                              <table
+                                style={{
+                                  width: "100%",
+                                  borderCollapse: "collapse",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                <thead>
+                                  <tr
+                                    style={{
+                                      background: "#f8fafc",
+                                      borderBottom: "1.5px solid #e4eaf0",
+                                    }}
+                                  >
+                                    <th
+                                      style={{
+                                        padding: "12px 14px",
+                                        textAlign: "left",
+                                        fontWeight: 700,
+                                        color: "#0a3d62",
+                                        fontSize: "12px",
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.4px",
+                                      }}
+                                    >
+                                      Patient Name
+                                    </th>
+                                    <th
+                                      style={{
+                                        padding: "12px 14px",
+                                        textAlign: "left",
+                                        fontWeight: 700,
+                                        color: "#0a3d62",
+                                        fontSize: "12px",
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.4px",
+                                      }}
+                                    >
+                                      Email
+                                    </th>
+                                    <th
+                                      style={{
+                                        padding: "12px 14px",
+                                        textAlign: "center",
+                                        fontWeight: 700,
+                                        color: "#0a3d62",
+                                        fontSize: "12px",
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.4px",
+                                      }}
+                                    >
+                                      Appointments
+                                    </th>
+                                    <th
+                                      style={{
+                                        padding: "12px 14px",
+                                        textAlign: "left",
+                                        fontWeight: 700,
+                                        color: "#0a3d62",
+                                        fontSize: "12px",
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.4px",
+                                      }}
+                                    >
+                                      Last Visit
+                                    </th>
+                                    <th
+                                      style={{
+                                        padding: "12px 14px",
+                                        textAlign: "center",
+                                        fontWeight: 700,
+                                        color: "#0a3d62",
+                                        fontSize: "12px",
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.4px",
+                                      }}
+                                    >
+                                      Action
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {paginatedPatients.map((patient, idx) => {
+                                    const lastApptDate = patient.lastAppointment
+                                      ? new Date(
+                                          patient.lastAppointment,
+                                        ).toLocaleDateString("en-US", {
+                                          month: "short",
+                                          day: "numeric",
+                                          year: "numeric",
+                                        })
+                                      : "—";
+                                    return (
+                                      <tr
+                                        key={patient.id}
+                                        style={{
+                                          borderBottom: "1px solid #f0f4f8",
+                                          background:
+                                            idx % 2 === 0 ? "#fff" : "#f8fafc",
+                                        }}
+                                      >
+                                        <td
+                                          style={{
+                                            padding: "12px 14px",
+                                            color: "#0a3d62",
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          {patient.name}
+                                        </td>
+                                        <td
+                                          style={{
+                                            padding: "12px 14px",
+                                            color: patient.email
+                                              ? "#1a3a52"
+                                              : "#c0c0c0",
+                                            wordBreak: "break-word",
+                                            fontWeight: patient.email
+                                              ? 500
+                                              : 400,
+                                          }}
+                                        >
+                                          {patient.email && patient.email.trim()
+                                            ? patient.email
+                                            : "—"}
+                                        </td>
+                                        <td
+                                          style={{
+                                            padding: "12px 14px",
+                                            textAlign: "center",
+                                            color: "#1a6fa0",
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          {patient.appointmentCount}
+                                        </td>
+                                        <td
+                                          style={{
+                                            padding: "12px 14px",
+                                            color: "#7a8fa6",
+                                          }}
+                                        >
+                                          {lastApptDate}
+                                        </td>
+                                        <td
+                                          style={{
+                                            padding: "12px 14px",
+                                            textAlign: "center",
+                                          }}
+                                        >
+                                          <button
+                                            onClick={() =>
+                                              toggleFavoritePatient(patient.id)
+                                            }
+                                            style={{
+                                              background: "none",
+                                              border: "none",
+                                              fontSize: "18px",
+                                              cursor: "pointer",
+                                              color: "#cbd5e1",
+                                              transition: "all 0.2s",
+                                              padding: "4px 8px",
+                                            }}
+                                            title="Add to favorites"
+                                            onMouseEnter={(e) =>
+                                              (e.target.style.transform =
+                                                "scale(1.2)")
+                                            }
+                                            onMouseLeave={(e) =>
+                                              (e.target.style.transform =
+                                                "scale(1)")
+                                            }
+                                          >
+                                            ☆
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Pagination */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                marginTop: "16px",
+                                paddingTop: "12px",
+                                borderTop: "1px solid #f0f4f8",
+                              }}
+                            >
+                              <span
+                                style={{ fontSize: "12px", color: "#7a8fa6" }}
+                              >
+                                Showing {startIndex + 1} to{" "}
+                                {Math.min(
+                                  startIndex + patientItemsPerPage,
+                                  filteredPatients.length,
+                                )}{" "}
+                                of {filteredPatients.length} patients
+                              </span>
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button
+                                  onClick={() =>
+                                    setPatientCurrentPage(
+                                      Math.max(1, patientCurrentPage - 1),
+                                    )
+                                  }
+                                  disabled={patientCurrentPage === 1}
+                                  style={{
+                                    padding: "6px 12px",
+                                    border: "1.5px solid #e4eaf0",
+                                    borderRadius: "6px",
+                                    background: "#f8fafc",
+                                    color: "#3a5068",
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    cursor:
+                                      patientCurrentPage === 1
+                                        ? "default"
+                                        : "pointer",
+                                    opacity: patientCurrentPage === 1 ? 0.5 : 1,
+                                    transition: "all 0.15s",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (patientCurrentPage !== 1) {
+                                      e.target.style.background = "#eff6ff";
+                                      e.target.style.borderColor = "#1a6fa0";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.target.style.background = "#f8fafc";
+                                    e.target.style.borderColor = "#e4eaf0";
+                                  }}
+                                >
+                                  ← Previous
+                                </button>
+
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "4px",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  {Array.from(
+                                    { length: totalPages },
+                                    (_, i) => (
+                                      <button
+                                        key={i + 1}
+                                        onClick={() =>
+                                          setPatientCurrentPage(i + 1)
+                                        }
+                                        style={{
+                                          width: "32px",
+                                          height: "32px",
+                                          border:
+                                            patientCurrentPage === i + 1
+                                              ? "1.5px solid #1a6fa0"
+                                              : "1.5px solid #e4eaf0",
+                                          borderRadius: "6px",
+                                          background:
+                                            patientCurrentPage === i + 1
+                                              ? "#eff6ff"
+                                              : "#f8fafc",
+                                          color:
+                                            patientCurrentPage === i + 1
+                                              ? "#1a6fa0"
+                                              : "#3a5068",
+                                          fontSize: "12px",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          transition: "all 0.15s",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          if (patientCurrentPage !== i + 1) {
+                                            e.target.style.background =
+                                              "#eff6ff";
+                                            e.target.style.borderColor =
+                                              "#1a6fa0";
+                                          }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          if (patientCurrentPage !== i + 1) {
+                                            e.target.style.background =
+                                              "#f8fafc";
+                                            e.target.style.borderColor =
+                                              "#e4eaf0";
+                                          }
+                                        }}
+                                      >
+                                        {i + 1}
+                                      </button>
+                                    ),
+                                  )}
+                                </div>
+
+                                <button
+                                  onClick={() =>
+                                    setPatientCurrentPage(
+                                      Math.min(
+                                        totalPages,
+                                        patientCurrentPage + 1,
+                                      ),
+                                    )
+                                  }
+                                  disabled={patientCurrentPage === totalPages}
+                                  style={{
+                                    padding: "6px 12px",
+                                    border: "1.5px solid #e4eaf0",
+                                    borderRadius: "6px",
+                                    background: "#f8fafc",
+                                    color: "#3a5068",
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    cursor:
+                                      patientCurrentPage === totalPages
+                                        ? "default"
+                                        : "pointer",
+                                    opacity:
+                                      patientCurrentPage === totalPages
+                                        ? 0.5
+                                        : 1,
+                                    transition: "all 0.15s",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (patientCurrentPage !== totalPages) {
+                                      e.target.style.background = "#eff6ff";
+                                      e.target.style.borderColor = "#1a6fa0";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.target.style.background = "#f8fafc";
+                                    e.target.style.borderColor = "#e4eaf0";
+                                  }}
+                                >
+                                  Next →
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -814,7 +1454,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                 </div>
                 <div className="dd-section">
                   <div className="dd-empty">
-                    <div className="dd-empty-icon">ðŸ’¬</div>
+                    <div className="dd-empty-icon">📹</div>
                     <p>
                       Go to the <strong>Appointments</strong> tab and click the{" "}
                       <span
@@ -1277,6 +1917,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-badge.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
                   .da-badge.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
                   .da-badge.ended { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+                  .da-badge.overdue { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
+                  .da-card.overdue { opacity:.6; }
                   .da-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; }
                   .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
                   .da-approve-btn:disabled { opacity:.5; cursor:default; }
@@ -1408,7 +2050,10 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                     };
                     const isChatOpen = chatApptId === appt.id;
                     return (
-                      <div className="da-card" key={appt.id}>
+                      <div
+                        className={`da-card${isAppointmentOverdue(appt) ? " overdue" : ""}`}
+                        key={appt.id}
+                      >
                         <div
                           className="da-card-header"
                           onClick={() =>
@@ -1438,15 +2083,17 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <span
-                              className={`da-badge ${endedSessions.has(appt.id) ? "ended" : appt.status}`}
+                              className={`da-badge ${isAppointmentOverdue(appt) ? "overdue" : endedSessions.has(appt.id) ? "ended" : appt.status}`}
                             >
-                              {endedSessions.has(appt.id)
-                                ? "⏹ Ended"
-                                : appt.status === "pending"
-                                  ? "⏳ Pending"
-                                  : appt.status === "confirmed"
-                                    ? "✅ Confirmed"
-                                    : "✔ Completed"}
+                              {isAppointmentOverdue(appt)
+                                ? "⏰ Overdue"
+                                : endedSessions.has(appt.id)
+                                  ? "⏹ Ended"
+                                  : appt.status === "pending"
+                                    ? "⏳ Pending"
+                                    : appt.status === "confirmed"
+                                      ? "✅ Confirmed"
+                                      : "✔ Completed"}
                             </span>
                             {appt.status === "pending" && (
                               <button

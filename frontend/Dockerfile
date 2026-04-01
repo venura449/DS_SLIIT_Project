@@ -4,6 +4,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Accept build time arguments
+ARG VITE_API_BASE_URL=http://gateway:3000/api
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+
 # Copy package.json and package-lock.json (if exists)
 COPY package.json package-lock.json* ./
 
@@ -13,7 +17,7 @@ RUN npm ci
 # Copy the entire project
 COPY . .
 
-# Build the Vite app
+# Build the Vite app with environment variable
 RUN npm run build
 
 # Stage 2: Serve with nginx

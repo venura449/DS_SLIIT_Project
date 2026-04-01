@@ -1,0 +1,118 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap");
+
+/* Chat Bubble Button - Floating Action Button */
+.chat-bubble-btn {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  background: linear-gradient(135deg, #0a3d62 0%, #1a6fa0 100%);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(10, 61, 98, 0.45);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-direction: row;
+  color: white;
+  transition: all 0.25s ease;
+  z-index: 999;
+  padding: 10px 10px;
+  border-radius: 50%;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+}
+
+.chat-bubble-btn:hover,
+.chat-bubble-btn.open {
+  border-radius: 30px;
+  width: auto;
+  height: auto;
+  padding: 10px 16px 10px 10px;
+  box-shadow: 0 6px 24px rgba(10, 61, 98, 0.55);
+}
+
+.chat-bubble-btn:active {
+  transform: scale(0.97);
+}
+
+/* Logo inside button */
+.bubble-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* Text label - hidden by default, shown on hover via parent expansion */
+.bubble-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  transition:
+    max-width 0.25s ease,
+    opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.chat-bubble-btn:hover .bubble-label,
+.chat-bubble-btn.open .bubble-label {
+  max-width: 120px;
+  opacity: 1;
+}
+
+.bubble-brand {
+  font-family: "Sora", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: #7dd8f8;
+  line-height: 1.1;
+  letter-spacing: 0.3px;
+}
+
+.bubble-text {
+  font-family: "DM Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.1;
+}
+
+/* Pulse animation when closed */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 4px 16px rgba(10, 61, 98, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 4px 24px rgba(10, 61, 98, 0.7),
+      0 0 0 6px rgba(125, 216, 248, 0.12);
+  }
+  100% {
+    box-shadow: 0 4px 16px rgba(10, 61, 98, 0.45);
+  }
+}
+
+.chat-bubble-btn:not(:hover):not(.open) {
+  animation: pulse 2.5s infinite;
+}
+
+/* Mobile - always show as circle */
+@media (max-width: 500px) {
+  .chat-bubble-btn:hover,
+  .chat-bubble-btn.open {
+    border-radius: 50%;
+    width: 52px;
+    height: 52px;
+    padding: 10px;
+  }
+  .chat-bubble-btn:hover .bubble-label,
+  .chat-bubble-btn.open .bubble-label {
+    max-width: 0;
+    opacity: 0;
+  }
+}

@@ -5,6 +5,7 @@ import {
   deleteMedicalRecord,
   getFileUrl,
 } from "../utils/medicalRecordService";
+import ChatBubbleButton from "./ChatBubbleButton";
 
 const CATEGORIES = [
   {
@@ -632,6 +633,8 @@ export default function MedicalRecords() {
           </div>
         </div>
       )}
+
+      <ChatBubbleButton />
     </>
   );
 }

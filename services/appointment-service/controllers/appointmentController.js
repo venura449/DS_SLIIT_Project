@@ -241,7 +241,26 @@ exports.getDoctorAppointments = async (req, res) => {
             [doctorId]
         );
 
-        res.status(200).json({ success: true, data: result.rows });
+        // Enrich with patient emails from auth service
+        const rows = result.rows;
+        const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
+        const uniquePatientIds = [...new Set(rows.map(r => r.patient_id))];
+        const emailMap = {};
+        await Promise.all(
+            uniquePatientIds.map(async (patientId) => {
+                try {
+                    const resp = await axios.get(`${AUTH_SERVICE_URL}/api/v1/internal/users/${patientId}`);
+                    if (resp.data && resp.data.data) {
+                        emailMap[patientId] = resp.data.data.email || '';
+                    }
+                } catch {
+                    emailMap[patientId] = '';
+                }
+            })
+        );
+
+        const enriched = rows.map(r => ({ ...r, patient_email: emailMap[r.patient_id] || '' }));
+        res.status(200).json({ success: true, data: enriched });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
