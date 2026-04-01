@@ -6,6 +6,7 @@ const client = require('prom-client');
 const promRegister = new client.Registry();
 client.collectDefaultMetrics({ register: promRegister });
 const { initializeConsumer, disconnectConsumer } = require('./config/kafka');
+const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
 dotenv.config();
@@ -49,6 +50,7 @@ const PORT = process.env.PORT || 3007;
 const server = app.listen(PORT, async () => {
     console.log(`Notification Service running on port ${PORT}`);
     try {
+        await initializeDatabase();
         await initializeConsumer();
     } catch (error) {
         console.error('Failed to start notification service:', error);

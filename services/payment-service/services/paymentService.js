@@ -1,5 +1,6 @@
 const Payment = require('../models/payment');
 const stripe = require('../config/stripe');
+const { sendPaymentEvent } = require('../config/kafka');
 
 /**
  * Create a new payment and initiate Stripe payment intent
@@ -55,11 +56,11 @@ exports.getPaymentsByUserId = async (userId) => {
  * Get payment by payment id
  */
 exports.getPaymentById = async (paymentId) => {
-   const payment = await Payment.findById(paymentId);
+    const payment = await Payment.findById(paymentId);
 
-   if (!payment) {
+    if (!payment) {
         throw new Error('Payment not found');
-   }
+    }
 
     return payment;
 }
@@ -83,7 +84,7 @@ exports.getPaymentByAppointmentId = async (appointmentId) => {
  * Get payments by status
  */
 exports.getPaymentsByStatus = async (status) => {
-   if (!status) {
+    if (!status) {
         throw new Error('Status is required');
     }
 
@@ -101,6 +102,24 @@ exports.updatePaymentStatus = async (paymentId, status, transactionId) => {
 
     if (!updatedPayment) {
         throw new Error('Payment not found');
+    }
+
+    // Emit Kafka event so the notification-service can notify the patient
+    if (status === 'SUCCESS') {
+        await sendPaymentEvent('PAYMENT_COMPLETED', {
+            paymentId: updatedPayment.id,
+            userId: updatedPayment.patient_id,
+            amount: updatedPayment.amount,
+            transactionId,
+        });
+    } else if (status === 'FAILED') {
+        await sendPaymentEvent('PAYMENT_FAILED', {
+            paymentId: updatedPayment.id,
+            userId: updatedPayment.patient_id,
+            amount: updatedPayment.amount,
+            reason: 'Payment was declined',
+            transactionId,
+        });
     }
 
     return updatedPayment;
