@@ -1,0 +1,74 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "healthcare-platform"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Docker Stats Exporter - container CPU/memory/network metrics
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["docker-stats-exporter:9338"]
+    metrics_path: /metrics
+
+  # Node Exporter - Host OS metrics
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # API Gateway - application HTTP metrics
+  - job_name: "api-gateway"
+    static_configs:
+      - targets: ["gateway:3000"]
+    metrics_path: /metrics
+
+  # Individual service health endpoints (scraped as up/down probes)
+  - job_name: "auth-service"
+    static_configs:
+      - targets: ["auth-service:3001"]
+    metrics_path: /metrics
+
+  - job_name: "patient-service"
+    static_configs:
+      - targets: ["patient-service:3002"]
+    metrics_path: /metrics
+
+  - job_name: "doctor-service"
+    static_configs:
+      - targets: ["doctor-service:3003"]
+    metrics_path: /metrics
+
+  - job_name: "appointment-service"
+    static_configs:
+      - targets: ["appointment-service:3004"]
+    metrics_path: /metrics
+
+  - job_name: "telemedicine-service"
+    static_configs:
+      - targets: ["telemedicine-service:3005"]
+    metrics_path: /metrics
+
+  - job_name: "payment-service"
+    static_configs:
+      - targets: ["payment-service:3006"]
+    metrics_path: /metrics
+
+  - job_name: "notification-service"
+    static_configs:
+      - targets: ["notification-service:3007"]
+    metrics_path: /metrics
+
+  - job_name: "ai-symptom-service"
+    static_configs:
+      - targets: ["ai-symptom-service:3008"]
+    metrics_path: /metrics
+
+  - job_name: "ml-service"
+    static_configs:
+      - targets: ["ml-service:5000"]
+    metrics_path: /metrics
