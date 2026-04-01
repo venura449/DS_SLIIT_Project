@@ -609,7 +609,7 @@ function UserManagement() {
       </div>
 
       {/* Pagination */}
-      {!loading && totalPages > 1 && (
+      {!loading && total > 0 && (
         <div className="um-pagination">
           <span className="um-pagination-info">
             Showing {Math.min((page - 1) * limit + 1, total)}–
