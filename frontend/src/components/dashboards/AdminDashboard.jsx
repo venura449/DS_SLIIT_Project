@@ -1393,6 +1393,788 @@ const navItems = [
   { id: "logs", icon: "📋", label: "Activity Logs" },
 ];
 
+/* ── Reports sub-component ── */
+function Reports() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const _rNow = new Date();
+  const [tableMonth, setTableMonth] = useState("");
+  const [tableYear, setTableYear] = useState(_rNow.getFullYear());
+  const [tableData, setTableData] = useState(null);
+  const [tableLoading, setTableLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [apptRes, payRes, patientsRes, doctorsRes, adminsRes] =
+        await Promise.all([
+          authenticatedFetch(
+            `${API_BASE}/appointments/api/v1/appointments/admin/stats`,
+          ),
+          authenticatedFetch(`${API_BASE}/payments/api/admin/stats`),
+          authenticatedFetch(
+            `${API_BASE}/auth/api/v1/admin/users?role=patient&limit=1`,
+          ),
+          authenticatedFetch(
+            `${API_BASE}/auth/api/v1/admin/users?role=doctor&limit=1`,
+          ),
+          authenticatedFetch(
+            `${API_BASE}/auth/api/v1/admin/users?role=admin&limit=1`,
+          ),
+        ]);
+
+      const appt = apptRes.ok ? (await apptRes.json()).data : {};
+      const pay = payRes.ok ? (await payRes.json()).data : {};
+      const patientCount = patientsRes.ok
+        ? ((await patientsRes.json()).data?.pagination?.total ?? 0)
+        : 0;
+      const doctorCount = doctorsRes.ok
+        ? ((await doctorsRes.json()).data?.pagination?.total ?? 0)
+        : 0;
+      const adminCount = adminsRes.ok
+        ? ((await adminsRes.json()).data?.pagination?.total ?? 0)
+        : 0;
+
+      setData({ appt, pay, patientCount, doctorCount, adminCount });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const loadTableStats = useCallback(async (month, year) => {
+    if (!month) {
+      setTableData(null);
+      return;
+    }
+    setTableLoading(true);
+    try {
+      const qs = `?month=${month}&year=${year}`;
+      const [apptRes, payRes] = await Promise.all([
+        authenticatedFetch(
+          `${API_BASE}/appointments/api/v1/appointments/admin/stats${qs}`,
+        ),
+        authenticatedFetch(`${API_BASE}/payments/api/admin/stats${qs}`),
+      ]);
+      const appt = apptRes.ok ? (await apptRes.json()).data : null;
+      const pay = payRes.ok ? (await payRes.json()).data : null;
+      setTableData({ appt, pay });
+    } catch {
+      setTableData(null);
+    } finally {
+      setTableLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTableStats(tableMonth, tableYear);
+  }, [tableMonth, tableYear, loadTableStats]);
+
+  /* ── helpers ── */
+  const apptStatusColors = {
+    scheduled: "#3b82f6",
+    confirmed: "#22c55e",
+    completed: "#0ea5e9",
+    pending: "#f59e0b",
+    cancelled: "#ef4444",
+  };
+  const apptStatusLabels = {
+    scheduled: "Scheduled",
+    confirmed: "Confirmed",
+    completed: "Completed",
+    pending: "Pending",
+    cancelled: "Cancelled",
+  };
+
+  const buildConicGradient = (segments) => {
+    const total = segments.reduce((s, seg) => s + seg.value, 0);
+    if (total === 0) return "#e4eaf0";
+    let cursor = 0;
+    return `conic-gradient(${segments
+      .map((seg) => {
+        const pct = (seg.value / total) * 100;
+        const from = cursor;
+        cursor += pct;
+        return `${seg.color} ${from.toFixed(1)}% ${cursor.toFixed(1)}%`;
+      })
+      .join(", ")})`;
+  };
+
+  const MONTH_NAMES = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+
+  const exportCSV = () => {
+    if (!data) return;
+    const tA = tableData?.appt ?? data.appt;
+    const tP = tableData?.pay ?? data.pay;
+    const { patientCount, doctorCount, adminCount } = data;
+    const appt = tA;
+    const pay = tP;
+    const periodLabel = tableMonth
+      ? `${MONTH_NAMES[Number(tableMonth) - 1]} ${tableYear}`
+      : "All Time";
+    const rows = [
+      ["MediConnect Platform Report", new Date().toLocaleDateString()],
+      ["Period", periodLabel],
+      [],
+      ["APPOINTMENTS"],
+      ["Total Appointments", appt?.total ?? 0],
+      ["This Month", appt?.thisMonth ?? 0],
+      ...(appt?.byStatus
+        ? Object.entries(appt.byStatus).map(([s, c]) => [
+            `  ${s[0].toUpperCase() + s.slice(1)}`,
+            c,
+          ])
+        : []),
+      [],
+      ["PAYMENTS"],
+      ["Total Payments", pay?.total ?? 0],
+      ["Completed (SUCCESS)", pay?.completed ?? 0],
+      ["Pending", pay?.pending ?? 0],
+      ["Total Revenue (LKR)", (pay?.totalRevenue ?? 0).toFixed(2)],
+      ["This Month", pay?.thisMonth ?? 0],
+      [],
+      ["USERS"],
+      ["Patients", patientCount],
+      ["Doctors", doctorCount],
+      ["Admins", adminCount],
+      ["Total", patientCount + doctorCount + adminCount],
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mediconnect-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /* ── derived chart data ── */
+  const apptSegments = data?.appt?.byStatus
+    ? Object.entries(data.appt.byStatus)
+        .filter(([, c]) => c > 0)
+        .map(([s, c]) => ({
+          status: s,
+          value: Number(c),
+          color: apptStatusColors[s] || "#94a3b8",
+          label: apptStatusLabels[s] || s,
+        }))
+    : [];
+
+  const payTotal = data?.pay?.total ?? 0;
+  const payCompleted = data?.pay?.completed ?? 0;
+  const payPending = data?.pay?.pending ?? 0;
+  const payFailed = Math.max(0, payTotal - payCompleted - payPending);
+  const paySegments = [
+    { label: "Completed", value: payCompleted, color: "#22c55e" },
+    { label: "Pending", value: payPending, color: "#f59e0b" },
+    { label: "Failed", value: payFailed, color: "#ef4444" },
+  ].filter((s) => s.value > 0);
+
+  const totalUsers =
+    (data?.patientCount ?? 0) +
+    (data?.doctorCount ?? 0) +
+    (data?.adminCount ?? 0);
+  const userBars = [
+    {
+      label: "Patients",
+      count: data?.patientCount ?? 0,
+      color: "#3b82f6",
+      icon: "🧑",
+    },
+    {
+      label: "Doctors",
+      count: data?.doctorCount ?? 0,
+      color: "#22c55e",
+      icon: "👨‍⚕️",
+    },
+    {
+      label: "Admins",
+      count: data?.adminCount ?? 0,
+      color: "#a855f7",
+      icon: "🛡️",
+    },
+  ];
+
+  /* ── KPI cards ── */
+  const kpis = [
+    {
+      label: "Total Appointments",
+      icon: "📅",
+      value: data?.appt?.total ?? 0,
+      sub: `${data?.appt?.thisMonth ?? 0} this month`,
+      accent: "#3b82f6",
+    },
+    {
+      label: "Appointments This Month",
+      icon: "🗓️",
+      value: data?.appt?.thisMonth ?? 0,
+      sub: "non-cancelled",
+      accent: "#0ea5e9",
+    },
+    {
+      label: "Total Revenue",
+      icon: "💰",
+      value: `LKR ${(data?.pay?.totalRevenue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      sub: `${data?.pay?.completed ?? 0} completed payments`,
+      accent: "#22c55e",
+      smallValue: true,
+    },
+  ];
+
+  const Skeleton = ({ w = "60%", h = 22 }) => (
+    <div
+      style={{
+        width: w,
+        height: h,
+        borderRadius: 5,
+        background:
+          "linear-gradient(90deg,#f0f4f8 25%,#e8eef5 50%,#f0f4f8 75%)",
+        backgroundSize: "400% 100%",
+        animation: "rp-shimmer 1.2s infinite",
+      }}
+    />
+  );
+
+  const DonutChart = ({ segments, size = 130 }) => {
+    const total = segments.reduce((s, seg) => s + seg.value, 0);
+    const bg = total === 0 ? "#e4eaf0" : buildConicGradient(segments);
+    const hole = Math.round(size * 0.34);
+    return (
+      <div
+        style={{
+          position: "relative",
+          width: size,
+          height: size,
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            width: size,
+            height: size,
+            borderRadius: "50%",
+            background: bg,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: hole,
+            left: hole,
+            right: hole,
+            bottom: hole,
+            borderRadius: "50%",
+            background: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "column",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: "#0a3d62",
+              fontFamily: "'Sora', sans-serif",
+              lineHeight: 1,
+            }}
+          >
+            {total}
+          </span>
+          <span style={{ fontSize: 9, color: "#b0bec8", marginTop: 2 }}>
+            total
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <style>{`
+        @keyframes rp-shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+        .rp-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+        @media(max-width:860px) { .rp-grid2 { grid-template-columns:1fr; } }
+        .rp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:14px; }
+        .rp-kpi { background:#fff; border:1px solid #e4eaf0; border-radius:10px; padding:16px 18px; border-top:3px solid var(--accent); }
+        .rp-kpi-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#7a8fa6; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+        .rp-kpi-value { font-family:'Sora',sans-serif; font-size:26px; font-weight:700; color:#0a3d62; line-height:1; margin-bottom:4px; }
+        .rp-kpi-value.sm { font-size:17px; }
+        .rp-kpi-sub { font-size:11px; color:#b0bec8; }
+        .rp-card { background:#fff; border:1px solid #e4eaf0; border-radius:10px; padding:20px 22px; }
+        .rp-card-title { font-family:'Sora',sans-serif; font-size:13.5px; font-weight:600; color:#0a3d62; margin-bottom:16px; display:flex; align-items:center; gap:7px; }
+        .rp-legend { display:flex; flex-direction:column; gap:10px; flex:1; }
+        .rp-legend-row { display:flex; align-items:center; gap:8px; font-size:12.5px; }
+        .rp-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+        .rp-legend-label { flex:1; color:#3a5068; }
+        .rp-legend-count { font-weight:700; color:#0a3d62; font-size:13px; }
+        .rp-legend-pct { color:#b0bec8; font-size:11px; margin-left:2px; }
+        .rp-bar-row { margin-bottom:12px; }
+        .rp-bar-meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; font-size:12.5px; color:#3a5068; }
+        .rp-bar-track { height:9px; background:#f0f4f8; border-radius:999px; overflow:hidden; }
+        .rp-bar-fill { height:100%; border-radius:999px; transition:width .6s ease; }
+        .rp-chart-row { display:flex; align-items:center; gap:22px; }
+        .rp-toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
+        .rp-export-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:7px; border:1px solid #e4eaf0; background:#fff; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; color:#3a5068; cursor:pointer; transition:all .15s; }
+        .rp-export-btn:hover { border-color:#0a3d62; color:#0a3d62; background:#eff6ff; }
+        .rp-refresh-btn { display:inline-flex; align-items:center; gap:5px; padding:8px 14px; border-radius:7px; border:1px solid #e4eaf0; background:#fff; font-family:'DM Sans',sans-serif; font-size:12.5px; font-weight:600; color:#7a8fa6; cursor:pointer; transition:all .15s; }
+        .rp-refresh-btn:hover { border-color:#7a8fa6; color:#3a5068; }
+        .rp-summary-table { width:100%; border-collapse:collapse; font-size:13px; }
+        .rp-summary-table th { background:#f4f7fb; padding:9px 14px; text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; color:#7a8fa6; border-bottom:1px solid #e4eaf0; }
+        .rp-summary-table td { padding:10px 14px; border-bottom:1px solid #f0f4f8; color:#3a5068; }
+        .rp-summary-table tr:last-child td { border-bottom:none; }
+      `}</style>
+
+      {/* Toolbar */}
+      <div className="rp-toolbar">
+        <div className="ad-page-head" style={{ marginBottom: 0 }}>
+          <h2>Reports &amp; Analytics</h2>
+          <p>Platform-wide statistics and performance overview.</p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="rp-refresh-btn" onClick={load} disabled={loading}>
+            🔄 {loading ? "Loading…" : "Refresh"}
+          </button>
+          <button
+            className="rp-export-btn"
+            onClick={exportCSV}
+            disabled={loading || !data}
+          >
+            ⬇️ Export CSV
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            borderRadius: 8,
+            padding: "10px 16px",
+            fontSize: 13,
+            marginBottom: 14,
+          }}
+        >
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* KPI cards */}
+      <div className="rp-kpis">
+        {kpis.map(({ label, icon, value, sub, accent, smallValue }) => (
+          <div className="rp-kpi" key={label} style={{ "--accent": accent }}>
+            <div className="rp-kpi-label">
+              <span>{icon}</span>
+              {label}
+            </div>
+            {loading ? (
+              <Skeleton w="55%" h={26} />
+            ) : (
+              <div className={`rp-kpi-value${smallValue ? " sm" : ""}`}>
+                {value}
+              </div>
+            )}
+            <div className="rp-kpi-sub">{sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts row */}
+      <div className="rp-grid2">
+        {/* Appointment status */}
+        <div className="rp-card">
+          <div className="rp-card-title">📅 Appointment Status</div>
+          {loading ? (
+            <div style={{ display: "flex", gap: 22, alignItems: "center" }}>
+              <Skeleton w={130} h={130} />
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} h={14} />
+                ))}
+              </div>
+            </div>
+          ) : apptSegments.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                color: "#b0bec8",
+                padding: 24,
+                fontSize: 13,
+              }}
+            >
+              No appointment data yet
+            </div>
+          ) : (
+            <div className="rp-chart-row">
+              <DonutChart segments={apptSegments} />
+              <div className="rp-legend">
+                {apptSegments.map((seg) => {
+                  const total = apptSegments.reduce((s, x) => s + x.value, 0);
+                  return (
+                    <div className="rp-legend-row" key={seg.status}>
+                      <div
+                        className="rp-legend-dot"
+                        style={{ background: seg.color }}
+                      />
+                      <span className="rp-legend-label">{seg.label}</span>
+                      <span className="rp-legend-count">{seg.value}</span>
+                      <span className="rp-legend-pct">
+                        (
+                        {total > 0 ? ((seg.value / total) * 100).toFixed(0) : 0}
+                        %)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Payment status */}
+        <div className="rp-card">
+          <div className="rp-card-title">💳 Payment Status</div>
+          {loading ? (
+            <div style={{ display: "flex", gap: 22, alignItems: "center" }}>
+              <Skeleton w={130} h={130} />
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} h={14} />
+                ))}
+              </div>
+            </div>
+          ) : paySegments.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                color: "#b0bec8",
+                padding: 24,
+                fontSize: 13,
+              }}
+            >
+              No payment data yet
+            </div>
+          ) : (
+            <div className="rp-chart-row">
+              <DonutChart segments={paySegments} />
+              <div className="rp-legend">
+                {paySegments.map((seg) => {
+                  const tot = paySegments.reduce((s, x) => s + x.value, 0);
+                  return (
+                    <div className="rp-legend-row" key={seg.label}>
+                      <div
+                        className="rp-legend-dot"
+                        style={{ background: seg.color }}
+                      />
+                      <span className="rp-legend-label">{seg.label}</span>
+                      <span className="rp-legend-count">{seg.value}</span>
+                      <span className="rp-legend-pct">
+                        ({tot > 0 ? ((seg.value / tot) * 100).toFixed(0) : 0}
+                        %)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* User distribution */}
+      <div className="rp-card" style={{ marginBottom: 14 }}>
+        <div className="rp-card-title">👥 User Distribution</div>
+        {loading ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} h={14} />
+            ))}
+          </div>
+        ) : (
+          <>
+            {userBars.map(({ label, count, color, icon }) => {
+              const pct = totalUsers > 0 ? (count / totalUsers) * 100 : 0;
+              return (
+                <div className="rp-bar-row" key={label}>
+                  <div className="rp-bar-meta">
+                    <span>
+                      {icon} {label}
+                    </span>
+                    <span style={{ fontWeight: 700, color: "#0a3d62" }}>
+                      {count}
+                      <span
+                        style={{
+                          fontWeight: 400,
+                          color: "#b0bec8",
+                          fontSize: 11,
+                          marginLeft: 4,
+                        }}
+                      >
+                        ({pct.toFixed(0)}%)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="rp-bar-track">
+                    <div
+                      className="rp-bar-fill"
+                      style={{ width: `${pct}%`, background: color }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 11.5,
+                color: "#b0bec8",
+                textAlign: "right",
+              }}
+            >
+              Total registered users:{" "}
+              <strong style={{ color: "#0a3d62" }}>{totalUsers}</strong>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Summary table */}
+      <div className="rp-card">
+        {/* Filter header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 14,
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <div className="rp-card-title" style={{ marginBottom: 0 }}>
+            📋 Summary Table
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <select
+              value={tableMonth}
+              onChange={(e) => setTableMonth(e.target.value)}
+              style={{
+                padding: "5px 10px",
+                borderRadius: 6,
+                border: "1px solid #e4eaf0",
+                fontSize: 12.5,
+                fontFamily: "'DM Sans',sans-serif",
+                color: "#3a5068",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              <option value="">All Time</option>
+              {MONTH_NAMES.map((m, idx) => (
+                <option key={m} value={idx + 1}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <select
+              value={tableYear}
+              onChange={(e) => setTableYear(Number(e.target.value))}
+              style={{
+                padding: "5px 10px",
+                borderRadius: 6,
+                border: "1px solid #e4eaf0",
+                fontSize: 12.5,
+                fontFamily: "'DM Sans',sans-serif",
+                color: "#3a5068",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              {Array.from(
+                { length: new Date().getFullYear() - 2022 },
+                (_, i) => new Date().getFullYear() - i,
+              ).map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            {tableMonth && (
+              <button
+                onClick={() => setTableMonth("")}
+                style={{
+                  padding: "5px 9px",
+                  borderRadius: 6,
+                  border: "1px solid #e4eaf0",
+                  background: "#f8fafc",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  color: "#7a8fa6",
+                }}
+                title="Clear filter"
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
+        </div>
+        {tableMonth && (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "#7a8fa6",
+              marginBottom: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                background: "#eff6ff",
+                color: "#1d4ed8",
+                borderRadius: 12,
+                padding: "2px 10px",
+                fontWeight: 600,
+                fontSize: 11.5,
+              }}
+            >
+              📆 {MONTH_NAMES[Number(tableMonth) - 1]} {tableYear}
+            </span>
+            Appointments &amp; Payments filtered to this period. User totals are
+            all-time.
+          </div>
+        )}
+        <div className="ad-table-wrap">
+          <table className="rp-summary-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Metric</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading || (!!tableMonth && tableLoading)
+                ? Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i}>
+                      <td>
+                        <Skeleton h={12} />
+                      </td>
+                      <td>
+                        <Skeleton h={12} />
+                      </td>
+                      <td>
+                        <Skeleton w="40%" h={12} />
+                      </td>
+                    </tr>
+                  ))
+                : (() => {
+                    const tA = tableData?.appt ?? data?.appt;
+                    const tP = tableData?.pay ?? data?.pay;
+                    const activeLabel = tableMonth
+                      ? "Active (non-cancelled)"
+                      : "This Month (active)";
+                    const rows = [
+                      ["Appointments", "Total", tA?.total ?? 0],
+                      ["Appointments", activeLabel, tA?.thisMonth ?? 0],
+                      ...(tA?.byStatus
+                        ? Object.entries(tA.byStatus).map(([s, c]) => [
+                            "Appointments",
+                            `↳ ${s[0].toUpperCase() + s.slice(1)}`,
+                            c,
+                          ])
+                        : []),
+                      ["Payments", "Total", tP?.total ?? 0],
+                      ["Payments", "Completed", tP?.completed ?? 0],
+                      [
+                        "Payments",
+                        "Revenue (LKR)",
+                        `LKR ${(tP?.totalRevenue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                      ],
+                      ["Users", "Patients", data?.patientCount ?? 0],
+                      ["Users", "Doctors", data?.doctorCount ?? 0],
+                      ["Users", "Admins", data?.adminCount ?? 0],
+                    ];
+                    return rows.map(([cat, metric, val], i, arr) => {
+                      const prevCat = i > 0 ? arr[i - 1][0] : null;
+                      const showCat = cat !== prevCat;
+                      return (
+                        <tr key={`${cat}-${metric}`}>
+                          <td
+                            style={{
+                              fontWeight: showCat ? 600 : 400,
+                              color: showCat ? "#0a3d62" : "transparent",
+                              fontSize: showCat ? 13 : 12,
+                              userSelect: "none",
+                            }}
+                          >
+                            {showCat ? cat : "·"}
+                          </td>
+                          <td style={{ color: "#7a8fa6", fontSize: 12.5 }}>
+                            {metric}
+                          </td>
+                          <td style={{ fontWeight: 600, color: "#0a3d62" }}>
+                            {val}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 const pageTitles = {
   overview: "Overview",
   users: "User Management",
@@ -1984,21 +2766,9 @@ const AdminDashboard = ({ user: initialUser, onLogout }) => {
             )}
 
             {activeTab === "reports" && (
-              <>
-                <div className="ad-page-head">
-                  <h2>Reports</h2>
-                  <p>Platform analytics and usage statistics.</p>
-                </div>
-                <div className="ad-section">
-                  <div className="ad-section-title">
-                    ðŸ“Š Monthly Statistics
-                  </div>
-                  <div className="ad-empty">
-                    <div className="ad-empty-icon">ðŸ“ˆ</div>
-                    <p>Reports and analytics will be displayed here.</p>
-                  </div>
-                </div>
-              </>
+              <div className="ad-section">
+                <Reports />
+              </div>
             )}
 
             {activeTab === "settings" && (

@@ -450,20 +450,43 @@ exports.getMessages = async (req, res) => {
 exports.getAdminStats = async (req, res) => {
     try {
         const now = new Date();
-        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-            .toISOString().split('T')[0];
+        const reqYear = parseInt(req.query.year);
+        const reqMonth = parseInt(req.query.month);
+        const hasFilter = !isNaN(reqYear) && !isNaN(reqMonth) && reqMonth >= 1 && reqMonth <= 12;
 
-        const [totalRes, monthRes, statusRes] = await Promise.all([
-            db.query(`SELECT COUNT(*) AS total FROM appointments`),
-            db.query(
-                `SELECT COUNT(*) AS count FROM appointments
-                 WHERE appointment_date >= $1 AND status != 'cancelled'`,
-                [firstOfMonth]
-            ),
-            db.query(
-                `SELECT status, COUNT(*) AS count FROM appointments GROUP BY status`
-            ),
-        ]);
+        let totalRes, monthRes, statusRes;
+
+        if (hasFilter) {
+            const dateFrom = `${reqYear}-${String(reqMonth).padStart(2, '0')}-01`;
+            const lastDay = new Date(reqYear, reqMonth, 0).getDate();
+            const dateTo = `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+            [totalRes, monthRes, statusRes] = await Promise.all([
+                db.query(
+                    `SELECT COUNT(*) AS total FROM appointments WHERE appointment_date BETWEEN $1 AND $2`,
+                    [dateFrom, dateTo]
+                ),
+                db.query(
+                    `SELECT COUNT(*) AS count FROM appointments WHERE appointment_date BETWEEN $1 AND $2 AND status != 'cancelled'`,
+                    [dateFrom, dateTo]
+                ),
+                db.query(
+                    `SELECT status, COUNT(*) AS count FROM appointments WHERE appointment_date BETWEEN $1 AND $2 GROUP BY status`,
+                    [dateFrom, dateTo]
+                ),
+            ]);
+        } else {
+            const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+                .toISOString().split('T')[0];
+            [totalRes, monthRes, statusRes] = await Promise.all([
+                db.query(`SELECT COUNT(*) AS total FROM appointments`),
+                db.query(
+                    `SELECT COUNT(*) AS count FROM appointments WHERE appointment_date >= $1 AND status != 'cancelled'`,
+                    [firstOfMonth]
+                ),
+                db.query(`SELECT status, COUNT(*) AS count FROM appointments GROUP BY status`),
+            ]);
+        }
 
         const byStatus = {};
         statusRes.rows.forEach(r => { byStatus[r.status] = parseInt(r.count); });
