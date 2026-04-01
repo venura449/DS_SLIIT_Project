@@ -33,11 +33,6 @@ const normalisePhone = (phone) => {
  * @param {string} body - Message text
  */
 const sendSMS = async (to, body) => {
-    if (true) {
-        console.log(`[SMS DISABLED] To: ${to} | Message: ${body}`);
-        return null;
-    }
-
     const apiToken = process.env.SMSAPI_TOKEN;
     const senderId = process.env.SMSAPI_SENDER_ID;
 

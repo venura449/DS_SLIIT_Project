@@ -213,15 +213,7 @@ services:
     networks:
       - healthcare-network
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5000/api/symptoms/analyze",
-          "-X",
-          "POST",
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 10s
       timeout: 5s
       retries: 3

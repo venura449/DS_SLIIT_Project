@@ -9,6 +9,8 @@ client.collectDefaultMetrics({ register: promRegister });
 // Load environment variables
 dotenv.config();
 
+const { initializeDatabase } = require('./config/postgres');
+
 const app = express();
 
 // Middleware
@@ -46,8 +48,13 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3008;
 
 if (require.main === module) {
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, async () => {
         console.log(`AI Symptom Service running on port ${PORT}`);
+        try {
+            await initializeDatabase();
+        } catch (err) {
+            console.warn('AI DB initialization failed (history will be unavailable):', err.message);
+        }
     });
 }
 

@@ -1,5 +1,8 @@
 const db = require('../config/postgres');
+const axios = require('axios');
 const { sendDoctorEvent } = require('../config/kafka');
+
+const APPOINTMENT_SERVICE_URL = process.env.APPOINTMENT_SERVICE_URL || 'http://localhost:3004';
 
 /* ── POST /api/v1/prescriptions ───────────────────────────────── */
 // Doctor issues a prescription to a patient
@@ -62,11 +65,31 @@ exports.getDoctorPrescriptions = async (req, res) => {
 exports.getPatientPrescriptions = async (req, res) => {
     try {
         const { patientId } = req.params;
-        const result = await db.query(
-            `SELECT * FROM prescriptions WHERE patient_id = $1 ORDER BY created_at DESC`,
+
+        // Standalone prescriptions from doctor-service
+        const localResult = await db.query(
+            `SELECT *, 'standalone' AS source FROM prescriptions WHERE patient_id = $1 ORDER BY created_at DESC`,
             [patientId]
         );
-        res.status(200).json({ success: true, data: result.rows });
+
+        // Appointment-linked prescriptions from appointment-service (best-effort)
+        let appointmentPrescriptions = [];
+        try {
+            const response = await axios.get(
+                `${APPOINTMENT_SERVICE_URL}/api/prescriptions/internal/patient/${patientId}`,
+                { timeout: 3000 }
+            );
+            if (response.data && response.data.success) {
+                appointmentPrescriptions = (response.data.data || []).map(p => ({ ...p, source: 'appointment' }));
+            }
+        } catch (fetchErr) {
+            console.warn('Could not fetch appointment-service prescriptions:', fetchErr.message);
+        }
+
+        const combined = [...localResult.rows, ...appointmentPrescriptions]
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        res.status(200).json({ success: true, data: combined });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

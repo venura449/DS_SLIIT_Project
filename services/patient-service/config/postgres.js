@@ -29,6 +29,16 @@ const initializeDatabase = async () => {
             uploaded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON medical_records(patient_id);
+
+        CREATE TABLE IF NOT EXISTS patient_profiles (
+            patient_id        VARCHAR(255) PRIMARY KEY,
+            blood_type        VARCHAR(10),
+            allergies         TEXT,
+            emergency_contact VARCHAR(255),
+            notes             TEXT,
+            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     `);
     console.log('Patient DB initialized');
 };
