@@ -11,9 +11,9 @@ const REFRESH_TOKEN_EXPIRE = process.env.REFRESH_TOKEN_EXPIRE;
 /**
  * Generate JWT access token
  */
-const generateAccessToken = (userId, email) => {
+const generateAccessToken = (userId, email, userType) => {
     return jwt.sign(
-        { userId, email },
+        { userId, email, userType },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRE }
     );
@@ -33,8 +33,8 @@ const generateRefreshToken = (userId, email) => {
 /**
  * Generate both tokens
  */
-const generateTokens = (userId, email) => {
-    const accessToken = generateAccessToken(userId, email);
+const generateTokens = (userId, email, userType) => {
+    const accessToken = generateAccessToken(userId, email, userType);
     const refreshToken = generateRefreshToken(userId, email);
     return { accessToken, refreshToken };
 };

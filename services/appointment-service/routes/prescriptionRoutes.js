@@ -16,6 +16,9 @@ router.get('/doctor', authMiddleware, getDoctorPrescriptions);
 // Patient: list all prescriptions for themselves
 router.get('/patient', authMiddleware, getPatientPrescriptions);
 
+// Internal: fetch prescriptions by patientId (no JWT — service-to-service only, not exposed via gateway)
+router.get('/internal/patient/:patientId', getPatientPrescriptions);
+
 // Get prescription for a specific appointment (doctor or patient)
 router.get('/appointment/:appointmentId', authMiddleware, getPrescriptionByAppointment);
 

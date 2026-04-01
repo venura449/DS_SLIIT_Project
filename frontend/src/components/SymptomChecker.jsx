@@ -923,6 +923,8 @@ const SymptomChecker = () => {
   const [questionnireStarted, setQuestionnaireStarted] = useState(false);
   const [userGreeted, setUserGreeted] = useState(false);
   const messagesEndRef = useRef(null);
+  const msgIdRef = useRef(1);
+  const nextId = () => ++msgIdRef.current;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -935,7 +937,7 @@ const SymptomChecker = () => {
   const handleUserGreeting = () => {
     // Add user greeting message
     const greetingMessage = {
-      id: messages.length + 1,
+      id: nextId(),
       text: "Hi",
       sender: "user",
       timestamp: new Date(),
@@ -946,7 +948,7 @@ const SymptomChecker = () => {
     // Bot responds with questionnaire intro after a delay
     setTimeout(() => {
       const botResponse = {
-        id: messages.length + 2,
+        id: nextId(),
         text: "Great! Let's fill out a questionnaire according to your symptoms. I'll ask targeted yes/no questions that adapt based on your answers.\n\nRemember: This is for informational purposes only and not a replacement for professional medical advice.",
         sender: "bot",
         timestamp: new Date(),
@@ -958,7 +960,7 @@ const SymptomChecker = () => {
       setTimeout(() => {
         setCurrentQuestions(initialQuestions);
         const firstQuestion = {
-          id: messages.length + 3,
+          id: nextId(),
           text: initialQuestions[0].question,
           sender: "bot",
           timestamp: new Date(),
@@ -978,7 +980,7 @@ const SymptomChecker = () => {
 
     // Add user response
     const userMessage = {
-      id: messages.length + 1,
+      id: nextId(),
       text: answer === "yes" ? "Yes" : "No",
       sender: "user",
       timestamp: new Date(),
@@ -1011,7 +1013,7 @@ const SymptomChecker = () => {
         setCurrentQuestionIndex(nextIndex);
         const nextQ = nextQuestions[nextIndex];
         const botMessage = {
-          id: messages.length + 2,
+          id: nextId(),
           text: nextQ.question,
           sender: "bot",
           timestamp: new Date(),
@@ -1038,7 +1040,7 @@ const SymptomChecker = () => {
 
       if (!symptomsText) {
         const botMessage = {
-          id: messages.length + 1,
+          id: nextId(),
           text: "Based on your responses, you don't have any of the major symptoms I asked about.\n\nThis could indicate a mild condition or something specific I need more information about.\n\n**Recommendation:** If you're experiencing any other health concerns, please consult with a healthcare professional.",
           sender: "bot",
           timestamp: new Date(),
@@ -1102,7 +1104,7 @@ const SymptomChecker = () => {
       }
 
       const botMessage = {
-        id: messages.length + 1,
+        id: nextId(),
         text: botReply,
         sender: "bot",
         timestamp: new Date(),
@@ -1112,7 +1114,7 @@ const SymptomChecker = () => {
     } catch (error) {
       console.error("Error:", error);
       const errorMessage = {
-        id: messages.length + 1,
+        id: nextId(),
         text: "Sorry, I encountered an error analyzing your symptoms. Please try again or consult a healthcare professional.",
         sender: "bot",
         timestamp: new Date(),
@@ -1124,6 +1126,7 @@ const SymptomChecker = () => {
   };
 
   const resetDiagnosis = () => {
+    msgIdRef.current = 1;
     setMessages([
       {
         id: 1,
@@ -1201,7 +1204,7 @@ const SymptomChecker = () => {
               setQuestionnaireStarted(true);
               setCurrentQuestions(initialQuestions);
               const firstQuestion = {
-                id: messages.length + 1,
+                id: nextId(),
                 text: initialQuestions[0].question,
                 sender: "bot",
                 timestamp: new Date(),

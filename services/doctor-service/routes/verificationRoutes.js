@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const verificationController = require('../controllers/verificationController');
-const { authMiddleware } = require('../middlewares/authMiddleware');
+const { authMiddleware, requireAdmin } = require('../middlewares/authMiddleware');
 
 /**
  * Verification Routes
@@ -25,7 +25,7 @@ const upload = multer({
 });
 
 // Admin: get all submissions
-router.get('/all', authMiddleware, verificationController.getAllSubmissions);
+router.get('/all', authMiddleware, requireAdmin, verificationController.getAllSubmissions);
 
 // Doctor-protected routes
 router.post('/upload', authMiddleware, upload.single('file'), verificationController.uploadDocument);
@@ -34,8 +34,8 @@ router.get('/status/:doctorId', authMiddleware, verificationController.getStatus
 router.delete('/documents/:documentId', authMiddleware, verificationController.deleteDocument);
 router.post('/submit', authMiddleware, verificationController.submitForVerification);
 
-// Admin routes (protected; role enforcement to be added when role is added to JWT)
-router.post('/approve/:doctorId', authMiddleware, verificationController.approveVerification);
-router.post('/reject/:doctorId', authMiddleware, verificationController.rejectVerification);
+// Admin-only routes
+router.post('/approve/:doctorId', authMiddleware, requireAdmin, verificationController.approveVerification);
+router.post('/reject/:doctorId', authMiddleware, requireAdmin, verificationController.rejectVerification);
 
 module.exports = router;
