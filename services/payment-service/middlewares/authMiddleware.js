@@ -7,7 +7,7 @@ const authMiddleware = (req, res, next) => {
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({ success: false, message: 'No token provided' });
         }
-        
+
         const token = authHeader.substring(7);
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
@@ -17,4 +17,11 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
-module.exports = { authMiddleware };
+const requireRole = (...roles) => (req, res, next) => {
+    if (!roles.includes(req.user?.userType)) {
+        return res.status(403).json({ success: false, message: 'Access denied. Insufficient permissions' });
+    }
+    next();
+};
+
+module.exports = { authMiddleware, requireRole };

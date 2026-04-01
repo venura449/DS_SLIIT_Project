@@ -6,8 +6,17 @@ import {
   useElements,
 } from "@stripe/react-stripe-js";
 import { useState } from "react";
+import { authenticatedFetch } from "../utils/authService";
 
-const PaymentForm = ({ clientSecret, onSuccess, onCancel, amount = 0 }) => {
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
+const PaymentForm = ({
+  clientSecret,
+  paymentId,
+  onSuccess,
+  onCancel,
+  amount = 0,
+}) => {
   const stripe = useStripe();
   const elements = useElements();
   const [success, setSuccess] = useState(false);
@@ -90,6 +99,22 @@ const PaymentForm = ({ clientSecret, onSuccess, onCancel, amount = 0 }) => {
         result.paymentIntent &&
         result.paymentIntent.status === "succeeded"
       ) {
+        // Notify backend so status is persisted as SUCCESS
+        if (paymentId) {
+          try {
+            await authenticatedFetch(
+              `${API_BASE}/payments/api/payments/${paymentId}/confirm`,
+              {
+                method: "PATCH",
+                body: JSON.stringify({
+                  transactionId: result.paymentIntent.id,
+                }),
+              },
+            );
+          } catch (_) {
+            // non-blocking — UI still proceeds
+          }
+        }
         // Payment succeeded
         setSuccess(true);
         setLoading(false);
@@ -367,35 +392,47 @@ const PaymentForm = ({ clientSecret, onSuccess, onCancel, amount = 0 }) => {
                 transition: "all 0.2s",
               }}
             >
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-  
-                    {/* Card Number */}
-                    <div>
-                        <label className="label">Card Number</label>
-                        <div className="inputBox">
-                        <CardNumberElement options={cardStyle} onChange={handleCardChange} />
-                        </div>
-                    </div>
-
-                    {/* Expiry + CVC row */}
-                    <div style={{ display: "flex", gap: "12px" }}>
-                        
-                        <div style={{ flex: 1 }}>
-                        <label className="label">Expiry Date</label>
-                        <div className="inputBox">
-                            <CardExpiryElement options={cardStyle} onChange={handleCardChange} />
-                        </div>
-                        </div>
-
-                        <div style={{ flex: 1 }}>
-                        <label className="label">CVC</label>
-                        <div className="inputBox">
-                            <CardCvcElement options={cardStyle} onChange={handleCardChange} />
-                        </div>
-                        </div>
-
-                    </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px",
+                }}
+              >
+                {/* Card Number */}
+                <div>
+                  <label className="label">Card Number</label>
+                  <div className="inputBox">
+                    <CardNumberElement
+                      options={cardStyle}
+                      onChange={handleCardChange}
+                    />
+                  </div>
                 </div>
+
+                {/* Expiry + CVC row */}
+                <div style={{ display: "flex", gap: "12px" }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="label">Expiry Date</label>
+                    <div className="inputBox">
+                      <CardExpiryElement
+                        options={cardStyle}
+                        onChange={handleCardChange}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <label className="label">CVC</label>
+                    <div className="inputBox">
+                      <CardCvcElement
+                        options={cardStyle}
+                        onChange={handleCardChange}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

@@ -2,6 +2,7 @@
 import {
   logoutUser,
   getAuthToken,
+  getUserData,
   authenticatedFetch,
 } from "../../utils/authService";
 import {
@@ -112,9 +113,10 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
   // Patients tab - favorite patients
   const [patients, setPatients] = useState([]);
+  const favKey = `doctorFavoritePatients_${getUserData()?.id ?? "unknown"}`;
   const [favoritePatientIds, setFavoritePatientIds] = useState(() => {
     try {
-      const stored = localStorage.getItem("doctorFavoritePatients");
+      const stored = localStorage.getItem(favKey);
       return stored ? new Set(JSON.parse(stored)) : new Set();
     } catch {
       return new Set();
@@ -414,11 +416,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
       } else {
         updated.add(patientId);
       }
-      // Save to localStorage
-      localStorage.setItem(
-        "doctorFavoritePatients",
-        JSON.stringify(Array.from(updated)),
-      );
+      // Save to localStorage (keyed per doctor)
+      localStorage.setItem(favKey, JSON.stringify(Array.from(updated)));
       return updated;
     });
   };

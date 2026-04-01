@@ -28,12 +28,7 @@ const initializeDatabase = async () => {
             END$$;`;
         await pool.query(createEnumQuery);
 
-        // Drop existing table to recreate with correct schema
-        const dropTableQuery = `DROP TABLE IF EXISTS payments CASCADE;`;
-        await pool.query(dropTableQuery);
-        console.log('Dropped existing payments table');
-
-        // Create payments table with correct schema
+        // Create payments table if it does not already exist (never drops existing data)
         const createTableQuery = `
         CREATE TABLE IF NOT EXISTS payments (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
