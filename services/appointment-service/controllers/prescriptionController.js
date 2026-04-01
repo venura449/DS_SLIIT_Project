@@ -192,7 +192,11 @@ const getDoctorPrescriptions = async (req, res) => {
 
 // GET /api/v1/prescriptions/patient  — all prescriptions for the authenticated patient
 const getPatientPrescriptions = async (req, res) => {
-    const patientId = req.user.userId;
+    // Support both JWT-authenticated requests and internal service-to-service calls
+    const patientId = (req.user && req.user.userId) || req.params.patientId;
+    if (!patientId) {
+        return res.status(400).json({ success: false, message: 'Patient ID is required' });
+    }
     try {
         const result = await query(
             `SELECT p.*,

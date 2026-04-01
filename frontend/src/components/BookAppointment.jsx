@@ -122,6 +122,7 @@ const BookAppointment = ({ hideOverdues = false }) => {
 
   // Client secret for payment
   const [clientSecret, setClientSecret] = useState(null);
+  const [paymentId, setPaymentId] = useState(null);
   const [consultationFee, setConsultationFee] = useState(0); // Track fee for payment overlay
 
   /* ── load doctors ────────────────────────────────────────────── */
@@ -205,6 +206,7 @@ const BookAppointment = ({ hideOverdues = false }) => {
     if (result.success) {
       setConsultationFee(fee);
       setClientSecret(result.data.clientSecret);
+      setPaymentId(result.data.payment?.id || null);
     } else {
       setBookingError(result.error || "Payment initialization failed");
     }
@@ -237,6 +239,7 @@ const BookAppointment = ({ hideOverdues = false }) => {
 
         setBookingSlot(null);
         setClientSecret(null);
+        setPaymentId(null);
         loadSlots(selectedDoctor, currentWeek);
       }
     } catch (err) {
@@ -1010,10 +1013,12 @@ const BookAppointment = ({ hideOverdues = false }) => {
             <Elements stripe={stripePromise} options={{ clientSecret }}>
               <PaymentForm
                 clientSecret={clientSecret}
+                paymentId={paymentId}
                 amount={consultationFee}
                 onSuccess={handlePaymentSuccess}
                 onCancel={() => {
                   setClientSecret(null);
+                  setPaymentId(null);
                   setConsultationFee(0);
                 }}
               />

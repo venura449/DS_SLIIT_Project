@@ -34,7 +34,7 @@ const register = async (req, res) => {
         });
 
         // Generate tokens
-        const { accessToken, refreshToken } = generateTokens(newUser.id, newUser.email);
+        const { accessToken, refreshToken } = generateTokens(newUser.id, newUser.email, newUser.user_type);
 
         // Send Kafka event
         await sendAuthEvent('USER_REGISTERED', {
@@ -102,7 +102,7 @@ const login = async (req, res) => {
         }
 
         // Generate tokens
-        const { accessToken, refreshToken } = generateTokens(user.id, user.email);
+        const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.user_type);
 
         // Send Kafka event
         await sendAuthEvent('USER_LOGIN', {
@@ -229,7 +229,7 @@ const refreshToken = async (req, res) => {
         }
 
 
-        const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.email);
+        const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.email, user.user_type);
 
         res.status(200).json({
             success: true,

@@ -142,8 +142,8 @@ exports.createBooking = async (req, res) => {
 
         const appointment = result.rows[0];
 
-        // Publish event so notification-service can send confirmation SMS
-        await sendAppointmentEvent('APPOINTMENT_BOOKED', {
+        // Publish event so notification-service can notify the patient of the pending request
+        await sendAppointmentEvent('APPOINTMENT_PENDING', {
             appointmentId: appointment.id,
             patientId: appointment.patient_id,
             doctorId: appointment.doctor_id,
@@ -214,7 +214,21 @@ exports.cancelBooking = async (req, res) => {
             });
         }
 
-        res.status(200).json({ success: true, data: result.rows[0] });
+        const cancelled = result.rows[0];
+
+        // Notify doctor that the patient cancelled, and confirm to the patient
+        await sendAppointmentEvent('APPOINTMENT_CANCELLED', {
+            appointmentId: cancelled.id,
+            patientId: cancelled.patient_id,
+            doctorId: cancelled.doctor_id,
+            patientName: cancelled.patient_name,
+            doctorName: cancelled.doctor_name,
+            appointmentDate: cancelled.appointment_date,
+            startTime: cancelled.start_time,
+            cancelledBy: 'patient',
+        });
+
+        res.status(200).json({ success: true, data: cancelled });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -322,6 +336,48 @@ exports.approveAppointment = async (req, res) => {
     }
 };
 
+/* ── PUT /api/v1/appointments/:id/reject ───────────────────────── */
+exports.rejectAppointment = async (req, res) => {
+    try {
+        const doctorId = req.user.userId;
+        const { id } = req.params;
+        const { reason } = req.body;
+
+        const result = await db.query(
+            `UPDATE appointments
+             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND doctor_id = $2 AND status = 'pending'
+             RETURNING *`,
+            [id, doctorId]
+        );
+
+        if (!result.rows[0]) {
+            return res.status(404).json({
+                success: false,
+                message: 'Appointment not found or not in pending state',
+            });
+        }
+
+        const rejected = result.rows[0];
+
+        // Notify the patient their request was rejected
+        await sendAppointmentEvent('APPOINTMENT_REJECTED', {
+            appointmentId: rejected.id,
+            patientId: rejected.patient_id,
+            doctorId: rejected.doctor_id,
+            patientName: rejected.patient_name,
+            doctorName: rejected.doctor_name,
+            appointmentDate: rejected.appointment_date,
+            startTime: rejected.start_time,
+            reason: reason || null,
+        });
+
+        res.status(200).json({ success: true, data: rejected });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 /* ── POST /api/v1/appointments/:id/messages ────────────────────── */
 exports.sendMessage = async (req, res) => {
     try {
@@ -385,6 +441,64 @@ exports.getMessages = async (req, res) => {
         );
 
         res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/* ── GET /api/v1/appointments/admin/stats ──────────────────────── */
+exports.getAdminStats = async (req, res) => {
+    try {
+        const now = new Date();
+        const reqYear = parseInt(req.query.year);
+        const reqMonth = parseInt(req.query.month);
+        const hasFilter = !isNaN(reqYear) && !isNaN(reqMonth) && reqMonth >= 1 && reqMonth <= 12;
+
+        let totalRes, monthRes, statusRes;
+
+        if (hasFilter) {
+            const dateFrom = `${reqYear}-${String(reqMonth).padStart(2, '0')}-01`;
+            const lastDay = new Date(reqYear, reqMonth, 0).getDate();
+            const dateTo = `${reqYear}-${String(reqMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+            [totalRes, monthRes, statusRes] = await Promise.all([
+                db.query(
+                    `SELECT COUNT(*) AS total FROM appointments WHERE appointment_date BETWEEN $1 AND $2`,
+                    [dateFrom, dateTo]
+                ),
+                db.query(
+                    `SELECT COUNT(*) AS count FROM appointments WHERE appointment_date BETWEEN $1 AND $2 AND status != 'cancelled'`,
+                    [dateFrom, dateTo]
+                ),
+                db.query(
+                    `SELECT status, COUNT(*) AS count FROM appointments WHERE appointment_date BETWEEN $1 AND $2 GROUP BY status`,
+                    [dateFrom, dateTo]
+                ),
+            ]);
+        } else {
+            const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+                .toISOString().split('T')[0];
+            [totalRes, monthRes, statusRes] = await Promise.all([
+                db.query(`SELECT COUNT(*) AS total FROM appointments`),
+                db.query(
+                    `SELECT COUNT(*) AS count FROM appointments WHERE appointment_date >= $1 AND status != 'cancelled'`,
+                    [firstOfMonth]
+                ),
+                db.query(`SELECT status, COUNT(*) AS count FROM appointments GROUP BY status`),
+            ]);
+        }
+
+        const byStatus = {};
+        statusRes.rows.forEach(r => { byStatus[r.status] = parseInt(r.count); });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                total: parseInt(totalRes.rows[0].total),
+                thisMonth: parseInt(monthRes.rows[0].count),
+                byStatus,
+            },
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

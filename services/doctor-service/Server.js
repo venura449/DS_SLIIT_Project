@@ -7,6 +7,7 @@ const promRegister = new client.Registry();
 client.collectDefaultMetrics({ register: promRegister });
 const path = require('path');
 const { initializeDatabase } = require('./config/postgres');
+const { initializeProducer, disconnectProducer } = require('./config/kafka');
 
 // Load environment variables
 dotenv.config();
@@ -28,10 +29,12 @@ const doctorRoutes = require('./routes/doctorRoutes');
 const verificationRoutes = require('./routes/verificationRoutes');
 const scheduleRoutes = require('./routes/scheduleRoutes');
 const publicDoctorRoutes = require('./routes/publicDoctorRoutes');
+const prescriptionRoutes = require('./routes/prescriptionRoutes');
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/v1/verification', verificationRoutes);
 app.use('/api/v1/schedule', scheduleRoutes);
 app.use('/api/v1/public', publicDoctorRoutes);
+app.use('/api/v1/prescriptions', prescriptionRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -62,6 +65,7 @@ const server = app.listen(PORT, async () => {
     try {
         await initializeDatabase();
         console.log('Database initialized successfully');
+        await initializeProducer();
     } catch (error) {
         console.error('Failed to initialize database:', error);
         process.exit(1);

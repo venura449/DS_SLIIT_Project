@@ -24,7 +24,7 @@ const authMiddleware = (req, res, next) => {
         const token = authHeader.substring(7);
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Attach decoded user info (userId, email) to request
+        // Attach decoded user info (userId, email, userType) to request
         req.user = decoded;
         next();
     } catch (error) {
@@ -35,4 +35,17 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
-module.exports = { authMiddleware };
+/**
+ * Require admin role. Must be used after authMiddleware.
+ */
+const requireAdmin = (req, res, next) => {
+    if (req.user?.userType !== 'admin') {
+        return res.status(403).json({
+            success: false,
+            message: 'Admin access required',
+        });
+    }
+    next();
+};
+
+module.exports = { authMiddleware, requireAdmin };

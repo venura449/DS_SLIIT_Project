@@ -179,3 +179,82 @@ exports.handleStripeWebhook = async (req, res) => {
         res.status(500).json({ success: false, error: 'Webhook processing error' });
     }
 }
+
+// Admin overview stats
+exports.getAdminStats = async (req, res) => {
+    try {
+        const db = require('../config/postgres');
+        const now = new Date();
+        const reqYear = parseInt(req.query.year);
+        const reqMonth = parseInt(req.query.month);
+        const hasFilter = !isNaN(reqYear) && !isNaN(reqMonth) && reqMonth >= 1 && reqMonth <= 12;
+
+        let result;
+        if (hasFilter) {
+            const dateFrom = new Date(reqYear, reqMonth - 1, 1).toISOString();
+            const dateTo = new Date(reqYear, reqMonth, 0, 23, 59, 59, 999).toISOString();
+            result = await db.query(`
+                SELECT
+                    COUNT(*)                                                        AS total,
+                    COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END), 0) AS total_revenue,
+                    COUNT(CASE WHEN status = 'SUCCESS' THEN 1 END)                 AS completed,
+                    COUNT(CASE WHEN status = 'PENDING'  THEN 1 END)                AS pending,
+                    COUNT(*)                                                        AS this_month
+                FROM payments
+                WHERE created_at >= $1 AND created_at <= $2
+            `, [dateFrom, dateTo]);
+        } else {
+            const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+            result = await db.query(`
+                SELECT
+                    COUNT(*)                                                        AS total,
+                    COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END), 0) AS total_revenue,
+                    COUNT(CASE WHEN status = 'SUCCESS' THEN 1 END)                 AS completed,
+                    COUNT(CASE WHEN status = 'PENDING'  THEN 1 END)                AS pending,
+                    COUNT(CASE WHEN created_at >= $1    THEN 1 END)                AS this_month
+                FROM payments
+            `, [firstOfMonth]);
+        }
+
+        const row = result.rows[0];
+        res.status(200).json({
+            success: true,
+            data: {
+                total: parseInt(row.total),
+                totalRevenue: parseFloat(row.total_revenue),
+                completed: parseInt(row.completed),
+                pending: parseInt(row.pending),
+                thisMonth: parseInt(row.this_month),
+            },
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Confirm payment after successful Stripe client-side confirmation
+exports.confirmPayment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { transactionId } = req.body;
+
+        const payment = await getPaymentById(id);
+
+        // Only the patient who created the payment may confirm it
+        if (String(payment.patient_id) !== String(req.user.userId)) {
+            return res.status(403).json({ success: false, error: 'Forbidden' });
+        }
+
+        if (payment.status === 'SUCCESS') {
+            return res.status(200).json({ success: true, message: 'Already confirmed', data: payment });
+        }
+
+        const updated = await updatePaymentStatus(id, 'SUCCESS', transactionId || null);
+        res.status(200).json({ success: true, message: 'Payment confirmed', data: updated });
+    } catch (error) {
+        if (error.message === 'Payment not found') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
