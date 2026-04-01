@@ -6,6 +6,36 @@ const {
 } = require('../services/twilioService');
 const Notification = require('../models/Notification');
 
+// Format a date value (ISO string or Date) as "2 April 2026"
+const formatDate = (value) => {
+    if (!value) return value;
+    try {
+        // Parse as UTC date so "2026-04-02" doesn't roll back a day in negative-offset zones
+        const d = new Date(value);
+        return d.toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            timeZone: 'UTC',
+        });
+    } catch {
+        return value;
+    }
+};
+
+// Format a time value (HH:MM:SS or HH:MM) as "9:00 AM"
+const formatTime = (value) => {
+    if (!value) return value;
+    try {
+        const [h, m] = value.toString().split(':').map(Number);
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    } catch {
+        return value;
+    }
+};
+
 const kafka = new Kafka({
     clientId: 'notification-service',
     brokers: [process.env.KAFKA_BROKER || 'localhost:9092'],
@@ -19,8 +49,8 @@ const initializeConsumer = async () => {
         await consumer.connect();
         console.log('✓ [Kafka] Consumer connected');
 
-        // Subscribe to auth, payment, and appointment events
-        const topics = ['auth-events', 'payment-events', 'appointment-events'];
+        // Subscribe to auth, payment, appointment, and doctor events
+        const topics = ['auth-events', 'payment-events', 'appointment-events', 'doctor-events'];
         console.log(`📡 [Kafka] Subscribing to topics:`, topics);
 
         await consumer.subscribe({
@@ -86,6 +116,94 @@ const handleEvent = async (event) => {
                 // No SMS action needed for profile updates
                 break;
 
+            case 'APPOINTMENT_PENDING':
+                console.log(`   📋 APPOINTMENT_PENDING event:`, data);
+                if (data.patientId) {
+                    const notif = await Notification.create({
+                        userId: data.patientId,
+                        type: 'appointment_pending',
+                        title: 'Appointment Request Received',
+                        message: `Your appointment request with ${data.doctorName || 'Dr. ...'} on ${formatDate(data.appointmentDate)} at ${formatTime(data.startTime)} is pending approval`,
+                        data: {
+                            appointmentId: data.appointmentId,
+                            doctorName: data.doctorName,
+                            appointmentDate: data.appointmentDate,
+                        },
+                    });
+                    console.log(`   ✓ Created pending appointment notification (patient):`, notif);
+                }
+                // Also notify the doctor about the new booking request
+                if (data.doctorId) {
+                    const notif = await Notification.create({
+                        userId: data.doctorId,
+                        type: 'appointment_new_request',
+                        title: 'New Appointment Request',
+                        message: `${data.patientName || 'A patient'} has requested an appointment on ${formatDate(data.appointmentDate)} at ${formatTime(data.startTime)}`,
+                        data: {
+                            appointmentId: data.appointmentId,
+                            patientName: data.patientName,
+                            appointmentDate: data.appointmentDate,
+                        },
+                    });
+                    console.log(`   ✓ Created new request notification (doctor):`, notif);
+                }
+                break;
+
+            case 'APPOINTMENT_CANCELLED':
+                console.log(`   ❌ APPOINTMENT_CANCELLED event:`, data);
+                // Notify the doctor that the patient cancelled
+                if (data.doctorId) {
+                    const notif = await Notification.create({
+                        userId: data.doctorId,
+                        type: 'appointment_cancelled',
+                        title: 'Appointment Cancelled',
+                        message: `${data.patientName || 'A patient'} has cancelled their appointment on ${formatDate(data.appointmentDate)} at ${formatTime(data.startTime)}`,
+                        data: {
+                            appointmentId: data.appointmentId,
+                            patientName: data.patientName,
+                            appointmentDate: data.appointmentDate,
+                        },
+                    });
+                    console.log(`   ✓ Created cancellation notification (doctor):`, notif);
+                }
+                // Also confirm to the patient their appointment is cancelled
+                if (data.patientId) {
+                    const notif = await Notification.create({
+                        userId: data.patientId,
+                        type: 'appointment_cancelled',
+                        title: 'Appointment Cancelled',
+                        message: `Your appointment with ${data.doctorName || 'Dr. ...'} on ${formatDate(data.appointmentDate)} at ${formatTime(data.startTime)} has been cancelled`,
+                        data: {
+                            appointmentId: data.appointmentId,
+                            doctorName: data.doctorName,
+                            appointmentDate: data.appointmentDate,
+                        },
+                    });
+                    console.log(`   ✓ Created cancellation confirmation notification (patient):`, notif);
+                }
+                break;
+
+            case 'APPOINTMENT_REJECTED':
+                console.log(`   🚫 APPOINTMENT_REJECTED event:`, data);
+                if (data.patientId) {
+                    const msg = data.reason
+                        ? `Your appointment request with ${data.doctorName || 'Dr. ...'} on ${formatDate(data.appointmentDate)} was declined: ${data.reason}`
+                        : `Your appointment request with ${data.doctorName || 'Dr. ...'} on ${formatDate(data.appointmentDate)} was declined`;
+                    const notif = await Notification.create({
+                        userId: data.patientId,
+                        type: 'appointment_rejected',
+                        title: 'Appointment Request Declined',
+                        message: msg,
+                        data: {
+                            appointmentId: data.appointmentId,
+                            doctorName: data.doctorName,
+                            appointmentDate: data.appointmentDate,
+                        },
+                    });
+                    console.log(`   ✓ Created rejection notification (patient):`, notif);
+                }
+                break;
+
             case 'APPOINTMENT_BOOKED':
                 console.log(`   📅 APPOINTMENT_BOOKED event:`, data);
                 if (data.patientId) {
@@ -93,7 +211,7 @@ const handleEvent = async (event) => {
                         userId: data.patientId,
                         type: 'appointment',
                         title: 'Appointment Confirmed',
-                        message: `Your appointment with ${data.doctorName || 'Dr. ...'} is confirmed on ${data.appointmentDate}`,
+                        message: `Your appointment with ${data.doctorName || 'Dr. ...'} is confirmed on ${formatDate(data.appointmentDate)} at ${formatTime(data.startTime)}`,
                         data: {
                             appointmentId: data.appointmentId,
                             doctorName: data.doctorName,
@@ -122,7 +240,7 @@ const handleEvent = async (event) => {
                         userId: data.patientId,
                         type: 'reminder',
                         title: 'Upcoming Appointment',
-                        message: `Reminder: You have an appointment with ${data.doctorName || 'Dr. ...'} at ${data.startTime}`,
+                        message: `Reminder: You have an appointment with ${data.doctorName || 'Dr. ...'} on ${formatDate(data.appointmentDate)} at ${formatTime(data.startTime)}`,
                         data: {
                             appointmentId: data.appointmentId,
                             doctorName: data.doctorName,
@@ -190,6 +308,7 @@ const handleEvent = async (event) => {
                         data: {
                             prescriptionId: data.prescriptionId,
                             doctorName: data.doctorName,
+                            medicationCount: data.medicationCount,
                         },
                     });
                     console.log(`   ✓ Created prescription notification:`, notif);

@@ -142,8 +142,8 @@ exports.createBooking = async (req, res) => {
 
         const appointment = result.rows[0];
 
-        // Publish event so notification-service can send confirmation SMS
-        await sendAppointmentEvent('APPOINTMENT_BOOKED', {
+        // Publish event so notification-service can notify the patient of the pending request
+        await sendAppointmentEvent('APPOINTMENT_PENDING', {
             appointmentId: appointment.id,
             patientId: appointment.patient_id,
             doctorId: appointment.doctor_id,
@@ -214,7 +214,21 @@ exports.cancelBooking = async (req, res) => {
             });
         }
 
-        res.status(200).json({ success: true, data: result.rows[0] });
+        const cancelled = result.rows[0];
+
+        // Notify doctor that the patient cancelled, and confirm to the patient
+        await sendAppointmentEvent('APPOINTMENT_CANCELLED', {
+            appointmentId: cancelled.id,
+            patientId: cancelled.patient_id,
+            doctorId: cancelled.doctor_id,
+            patientName: cancelled.patient_name,
+            doctorName: cancelled.doctor_name,
+            appointmentDate: cancelled.appointment_date,
+            startTime: cancelled.start_time,
+            cancelledBy: 'patient',
+        });
+
+        res.status(200).json({ success: true, data: cancelled });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -317,6 +331,48 @@ exports.approveAppointment = async (req, res) => {
         }
 
         res.status(200).json({ success: true, data: approved });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/* ── PUT /api/v1/appointments/:id/reject ───────────────────────── */
+exports.rejectAppointment = async (req, res) => {
+    try {
+        const doctorId = req.user.userId;
+        const { id } = req.params;
+        const { reason } = req.body;
+
+        const result = await db.query(
+            `UPDATE appointments
+             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND doctor_id = $2 AND status = 'pending'
+             RETURNING *`,
+            [id, doctorId]
+        );
+
+        if (!result.rows[0]) {
+            return res.status(404).json({
+                success: false,
+                message: 'Appointment not found or not in pending state',
+            });
+        }
+
+        const rejected = result.rows[0];
+
+        // Notify the patient their request was rejected
+        await sendAppointmentEvent('APPOINTMENT_REJECTED', {
+            appointmentId: rejected.id,
+            patientId: rejected.patient_id,
+            doctorId: rejected.doctor_id,
+            patientName: rejected.patient_name,
+            doctorName: rejected.doctor_name,
+            appointmentDate: rejected.appointment_date,
+            startTime: rejected.start_time,
+            reason: reason || null,
+        });
+
+        res.status(200).json({ success: true, data: rejected });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

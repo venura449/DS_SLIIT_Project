@@ -82,6 +82,21 @@ const initializeDatabase = async () => {
             bio              TEXT,
             updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS prescriptions (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            doctor_id       VARCHAR(255) NOT NULL,
+            patient_id      VARCHAR(255) NOT NULL,
+            appointment_id  VARCHAR(255),
+            doctor_name     VARCHAR(255),
+            patient_name    VARCHAR(255),
+            medications     JSONB NOT NULL DEFAULT '[]',
+            notes           TEXT,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_prescriptions_doctor  ON prescriptions(doctor_id);
+        CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON prescriptions(patient_id);
     `;
 
     await pool.query(createTablesQuery);

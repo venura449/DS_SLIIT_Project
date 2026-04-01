@@ -10,6 +10,7 @@ router.get('/doctors/:doctorId/slots', appointmentController.getDoctorAvailableS
 // Doctor-facing — must be authenticated
 router.get('/doctor', authMiddleware, appointmentController.getDoctorAppointments);
 router.put('/:id/approve', authMiddleware, appointmentController.approveAppointment);
+router.put('/:id/reject', authMiddleware, appointmentController.rejectAppointment);
 
 // Authenticated — patient manages their own bookings
 router.post('/', authMiddleware, appointmentController.createBooking);
