@@ -417,10 +417,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         updated.add(patientId);
       }
       // Save to localStorage (keyed per doctor)
-      localStorage.setItem(
-        favKey,
-        JSON.stringify(Array.from(updated)),
-      );
+      localStorage.setItem(favKey, JSON.stringify(Array.from(updated)));
       return updated;
     });
   };
