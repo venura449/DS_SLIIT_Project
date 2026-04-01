@@ -1406,6 +1406,55 @@ const AdminDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState(initialUser);
+  const [overviewStats, setOverviewStats] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+
+  const fetchOverviewStats = useCallback(async () => {
+    setOverviewLoading(true);
+    try {
+      const [usersRes, doctorsRes, apptRes, verifyRes, payRes] =
+        await Promise.all([
+          authenticatedFetch(`${API_BASE}/auth/api/v1/admin/users?limit=1`),
+          authenticatedFetch(
+            `${API_BASE}/auth/api/v1/admin/users?role=doctor&limit=1`,
+          ),
+          authenticatedFetch(
+            `${API_BASE}/appointments/api/v1/appointments/admin/stats`,
+          ),
+          authenticatedFetch(`${API_BASE}/doctors/api/v1/verification/all`),
+          authenticatedFetch(`${API_BASE}/payments/api/admin/stats`),
+        ]);
+
+      const usersData = usersRes.ok ? await usersRes.json() : null;
+      const doctorsData = doctorsRes.ok ? await doctorsRes.json() : null;
+      const apptData = apptRes.ok ? await apptRes.json() : null;
+      const verifyData = verifyRes.ok ? await verifyRes.json() : null;
+      const payData = payRes.ok ? await payRes.json() : null;
+
+      const pendingVerifications = Array.isArray(verifyData?.data)
+        ? verifyData.data.filter((s) => s.status === "submitted_for_review")
+            .length
+        : 0;
+
+      setOverviewStats({
+        totalUsers: usersData?.data?.pagination?.total ?? 0,
+        totalDoctors: doctorsData?.data?.pagination?.total ?? 0,
+        apptThisMonth: apptData?.data?.thisMonth ?? 0,
+        apptTotal: apptData?.data?.total ?? 0,
+        pendingVerifications,
+        totalRevenue: payData?.data?.totalRevenue ?? 0,
+        paymentsCompleted: payData?.data?.completed ?? 0,
+      });
+    } catch (e) {
+      console.error("Overview stats fetch failed:", e);
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "overview") fetchOverviewStats();
+  }, [activeTab, fetchOverviewStats]);
 
   const handleLogout = () => {
     logoutUser();
@@ -1817,40 +1866,87 @@ const AdminDashboard = ({ user: initialUser, onLogout }) => {
                   <h2>System Overview</h2>
                   <p>Platform statistics and health at a glance.</p>
                 </div>
+                <style>{`
+                  @keyframes ov-shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+                  .ov-skel { height:28px; width:60%; border-radius:6px;
+                    background:linear-gradient(90deg,#f0f4f8 25%,#e8eef5 50%,#f0f4f8 75%);
+                    background-size:400% 100%; animation:ov-shimmer 1.2s infinite; }
+                `}</style>
                 <div className="ad-stats">
-                  <div className="ad-stat">
-                    <div className="ad-stat-top">
-                      <div className="ad-stat-label">Total Users</div>
-                      <div className="ad-stat-icon">👥</div>
+                  {[
+                    {
+                      label: "Total Users",
+                      icon: "👥",
+                      value: overviewStats?.totalUsers,
+                      sub: "Registered accounts",
+                    },
+                    {
+                      label: "Doctors",
+                      icon: "👨\u200D⚕️",
+                      value: overviewStats?.totalDoctors,
+                      sub: "Registered doctors",
+                    },
+                    {
+                      label: "Appointments",
+                      icon: "📅",
+                      value: overviewStats?.apptThisMonth,
+                      sub: "This month",
+                    },
+                    {
+                      label: "Pending Review",
+                      icon: "⏳",
+                      value: overviewStats?.pendingVerifications,
+                      sub: "Awaiting verification",
+                    },
+                    {
+                      label: "Revenue (LKR)",
+                      icon: "💰",
+                      value: overviewStats
+                        ? `${overviewStats.totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : null,
+                      sub: `${overviewStats?.paymentsCompleted ?? 0} completed payments`,
+                    },
+                  ].map(({ label, icon, value, sub }) => (
+                    <div className="ad-stat" key={label}>
+                      <div className="ad-stat-top">
+                        <div className="ad-stat-label">{label}</div>
+                        <div className="ad-stat-icon">{icon}</div>
+                      </div>
+                      {overviewLoading ||
+                      value === null ||
+                      value === undefined ? (
+                        <div className="ov-skel" />
+                      ) : (
+                        <div
+                          className="ad-stat-value"
+                          style={{
+                            fontSize:
+                              label === "Revenue (LKR)" ? 18 : undefined,
+                          }}
+                        >
+                          {value}
+                        </div>
+                      )}
+                      <div className="ad-stat-sub">{sub}</div>
                     </div>
-                    <div className="ad-stat-value">0</div>
-                    <div className="ad-stat-sub">Active accounts</div>
-                  </div>
-                  <div className="ad-stat">
-                    <div className="ad-stat-top">
-                      <div className="ad-stat-label">Doctors</div>
-                      <div className="ad-stat-icon">👨‍⚕️</div>
-                    </div>
-                    <div className="ad-stat-value">0</div>
-                    <div className="ad-stat-sub">Verified professionals</div>
-                  </div>
-                  <div className="ad-stat">
-                    <div className="ad-stat-top">
-                      <div className="ad-stat-label">Appointments</div>
-                      <div className="ad-stat-icon">📅</div>
-                    </div>
-                    <div className="ad-stat-value">0</div>
-                    <div className="ad-stat-sub">This month</div>
-                  </div>
-                  <div className="ad-stat">
-                    <div className="ad-stat-top">
-                      <div className="ad-stat-label">Pending Review</div>
-                      <div className="ad-stat-icon">⏳</div>
-                    </div>
-                    <div className="ad-stat-value">0</div>
-                    <div className="ad-stat-sub">Verifications</div>
-                  </div>
+                  ))}
                 </div>
+                {!overviewLoading && overviewStats && (
+                  <div style={{ marginTop: 8, textAlign: "right" }}>
+                    <button
+                      onClick={fetchOverviewStats}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        fontSize: 12,
+                        color: "#7a8fa6",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🔄 Refresh
+                    </button>
+                  </div>
+                )}
               </>
             )}
 

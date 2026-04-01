@@ -17,4 +17,11 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
-module.exports = { authMiddleware };
+const requireRole = (...roles) => (req, res, next) => {
+    if (!roles.includes(req.user?.userType)) {
+        return res.status(403).json({ success: false, message: 'Access denied. Insufficient permissions' });
+    }
+    next();
+};
+
+module.exports = { authMiddleware, requireRole };

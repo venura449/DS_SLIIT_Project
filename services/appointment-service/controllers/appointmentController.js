@@ -445,3 +445,38 @@ exports.getMessages = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+/* ── GET /api/v1/appointments/admin/stats ──────────────────────── */
+exports.getAdminStats = async (req, res) => {
+    try {
+        const now = new Date();
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+            .toISOString().split('T')[0];
+
+        const [totalRes, monthRes, statusRes] = await Promise.all([
+            db.query(`SELECT COUNT(*) AS total FROM appointments`),
+            db.query(
+                `SELECT COUNT(*) AS count FROM appointments
+                 WHERE appointment_date >= $1 AND status != 'cancelled'`,
+                [firstOfMonth]
+            ),
+            db.query(
+                `SELECT status, COUNT(*) AS count FROM appointments GROUP BY status`
+            ),
+        ]);
+
+        const byStatus = {};
+        statusRes.rows.forEach(r => { byStatus[r.status] = parseInt(r.count); });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                total: parseInt(totalRes.rows[0].total),
+                thisMonth: parseInt(monthRes.rows[0].count),
+                byStatus,
+            },
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
