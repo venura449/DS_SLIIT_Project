@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { logoutUser, authenticatedFetch } from "../../utils/authService";
 import UpdateProfileForm from "../UpdateProfileForm";
+import { jsPDF } from "jspdf";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
@@ -1395,6 +1396,17 @@ const navItems = [
 
 /* ── Reports sub-component ── */
 function Reports() {
+  // Format large numbers to k, M, B, T format for readability
+  const formatRevenue = (num) => {
+    if (!num || num === 0) return "LKR 0";
+    const absNum = Math.abs(num);
+    if (absNum >= 1e12) return `LKR ${(num / 1e12).toFixed(1)}T`;
+    if (absNum >= 1e9) return `LKR ${(num / 1e9).toFixed(1)}B`;
+    if (absNum >= 1e6) return `LKR ${(num / 1e6).toFixed(1)}M`;
+    if (absNum >= 1e3) return `LKR ${(num / 1e3).toFixed(1)}k`;
+    return `LKR ${num.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  };
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1550,7 +1562,7 @@ function Reports() {
       ["Total Payments", pay?.total ?? 0],
       ["Completed (SUCCESS)", pay?.completed ?? 0],
       ["Pending", pay?.pending ?? 0],
-      ["Total Revenue (LKR)", (pay?.totalRevenue ?? 0).toFixed(2)],
+      ["Total Revenue (LKR)", formatRevenue(pay?.totalRevenue ?? 0)],
       ["This Month", pay?.thisMonth ?? 0],
       [],
       ["USERS"],
@@ -1567,6 +1579,166 @@ function Reports() {
     a.download = `mediconnect-report-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const exportPDF = () => {
+    if (!data) return;
+
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const contentWidth = pageWidth - margin * 2;
+
+    let yPos = margin;
+
+    // Header background
+    doc.setFillColor(10, 61, 98); // #0a3d62
+    doc.rect(0, 0, pageWidth, 30, "F");
+
+    // Header text
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont(undefined, "bold");
+    doc.text("MediConnect", margin, 12);
+    doc.setFontSize(13);
+    doc.setFont(undefined, "normal");
+    doc.text("Platform Report", margin, 20);
+
+    yPos = 40;
+
+    // Period indicator
+    const periodLabel = tableMonth
+      ? `${MONTH_NAMES[Number(tableMonth) - 1]} ${tableYear}`
+      : "All Time";
+
+    doc.setTextColor(34, 197, 94); // #22c55e
+    doc.setFontSize(12);
+    doc.setFont(undefined, "bold");
+    doc.text(`Report Period: ${periodLabel}`, margin, yPos);
+
+    yPos += 10;
+    doc.setTextColor(122, 143, 166); // #7a8fa6
+    doc.setFontSize(9);
+    doc.setFont(undefined, "normal");
+    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPos);
+
+    yPos += 12;
+
+    // Prepare data
+    const tA = tableData?.appt ?? data.appt;
+    const tP = tableData?.pay ?? data.pay;
+    const { patientCount, doctorCount, adminCount } = data;
+
+    // Content sections
+    const sections = [
+      {
+        title: "APPOINTMENTS",
+        color: "#3b82f6",
+        rows: [
+          ["Total Appointments", tA?.total ?? 0],
+          ["This Month", tA?.thisMonth ?? 0],
+          ...(tA?.byStatus
+            ? Object.entries(tA.byStatus).map(([s, c]) => [
+                `  ${s[0].toUpperCase() + s.slice(1)}`,
+                c,
+              ])
+            : []),
+        ],
+      },
+      {
+        title: "PAYMENTS",
+        color: "#10b981",
+        rows: [
+          ["Total Payments", tP?.total ?? 0],
+          ["Completed (SUCCESS)", tP?.completed ?? 0],
+          ["Total Revenue (LKR)", formatRevenue(tP?.totalRevenue ?? 0)],
+        ],
+      },
+      {
+        title: "USERS",
+        color: "#f59e0b",
+        rows: [
+          ["Patients", patientCount],
+          ["Doctors", doctorCount],
+          ["Admins", adminCount],
+          ["Total", patientCount + doctorCount + adminCount],
+        ],
+      },
+    ];
+
+    // Draw sections
+    sections.forEach((section, sIdx) => {
+      // Check if we need a new page
+      if (yPos > pageHeight - 40) {
+        doc.addPage();
+        yPos = margin;
+      }
+
+      // Section title
+      doc.setTextColor(10, 61, 98);
+      doc.setFontSize(11);
+      doc.setFont(undefined, "bold");
+      doc.text(section.title, margin, yPos);
+
+      // Underline
+      doc.setDrawColor(section.color);
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPos + 1, margin + 30, yPos + 1);
+
+      yPos += 6;
+
+      // Section rows
+      section.rows.forEach((row) => {
+        if (yPos > pageHeight - 20) {
+          doc.addPage();
+          yPos = margin;
+        }
+
+        const key = row[0];
+        const value = typeof row[1] === "number" ? row[1].toString() : row[1];
+
+        doc.setTextColor(122, 143, 166);
+        doc.setFontSize(10);
+        doc.setFont(key.startsWith("  ") ? undefined : "bold");
+
+        // Key
+        doc.text(key, margin + 2, yPos);
+
+        // Value (right aligned)
+        doc.setTextColor(10, 61, 98);
+        doc.setFont(undefined, "bold");
+        doc.text(value, margin + contentWidth, yPos, { align: "right" });
+
+        yPos += 5;
+      });
+
+      yPos += 4;
+    });
+
+    // Footer
+    const footerY = pageHeight - 10;
+    doc.setTextColor(200, 200, 200);
+    doc.setFontSize(8);
+    doc.setFont(undefined, "normal");
+    doc.text(
+      `MediConnect © ${new Date().getFullYear()} | Page ${doc.internal.pages.length - 1}`,
+      pageWidth / 2,
+      footerY,
+      { align: "center" },
+    );
+
+    // Generate filename
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = tableMonth
+      ? `mediconnect-report-${MONTH_NAMES[Number(tableMonth) - 1].toLowerCase()}-${tableYear}.pdf`
+      : `mediconnect-report-${dateStr}.pdf`;
+
+    doc.save(filename);
   };
 
   /* ── derived chart data ── */
@@ -1635,7 +1807,7 @@ function Reports() {
     {
       label: "Total Revenue",
       icon: "💰",
-      value: `LKR ${(data?.pay?.totalRevenue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: formatRevenue(data?.pay?.totalRevenue ?? 0),
       sub: `${data?.pay?.completed ?? 0} completed payments`,
       accent: "#22c55e",
       smallValue: true,
@@ -2061,6 +2233,14 @@ function Reports() {
                 ✕ Clear
               </button>
             )}
+            <button
+              className="rp-export-btn"
+              onClick={exportPDF}
+              disabled={loading || !data}
+              title="Download table as PDF"
+            >
+              📄 Download PDF
+            </button>
           </div>
         </div>
         {tableMonth && (
@@ -2136,7 +2316,7 @@ function Reports() {
                       [
                         "Payments",
                         "Revenue (LKR)",
-                        `LKR ${(tP?.totalRevenue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                        formatRevenue(tP?.totalRevenue ?? 0),
                       ],
                       ["Users", "Patients", data?.patientCount ?? 0],
                       ["Users", "Doctors", data?.doctorCount ?? 0],
@@ -2684,7 +2864,7 @@ const AdminDashboard = ({ user: initialUser, onLogout }) => {
                       label: "Revenue (LKR)",
                       icon: "💰",
                       value: overviewStats
-                        ? `${overviewStats.totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        ? formatRevenue(overviewStats.totalRevenue)
                         : null,
                       sub: `${overviewStats?.paymentsCompleted ?? 0} completed payments`,
                     },
