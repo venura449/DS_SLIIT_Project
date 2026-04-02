@@ -2355,6 +2355,550 @@ function Reports() {
   );
 }
 
+/* ── ActivityLog sub-component ── */
+function ActivityLog() {
+  const [logs, setLogs] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [actionFilter, setActionFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const searchTimer = useRef(null);
+
+  const totalPages = Math.ceil(total / limit);
+
+  const ACTION_CFG = {
+    USER_UPDATED: {
+      bg: "#eff6ff",
+      color: "#1d4ed8",
+      border: "#93c5fd",
+      icon: "✏️",
+    },
+    USER_ACTIVATED: {
+      bg: "#f0fdf4",
+      color: "#15803d",
+      border: "#86efac",
+      icon: "✅",
+    },
+    USER_DEACTIVATED: {
+      bg: "#fef2f2",
+      color: "#dc2626",
+      border: "#fecaca",
+      icon: "🚫",
+    },
+    DOCTOR_APPROVED: {
+      bg: "#ecfdf5",
+      color: "#065f46",
+      border: "#6ee7b7",
+      icon: "✅",
+    },
+    DOCTOR_REJECTED: {
+      bg: "#fff7ed",
+      color: "#c2410c",
+      border: "#fdba74",
+      icon: "❌",
+    },
+    USER_LOGIN: {
+      bg: "#f5f3ff",
+      color: "#6d28d9",
+      border: "#c4b5fd",
+      icon: "🔐",
+    },
+    USER_LOGOUT: {
+      bg: "#f8fafc",
+      color: "#475569",
+      border: "#cbd5e1",
+      icon: "🚪",
+    },
+    PASSWORD_CHANGED: {
+      bg: "#fffbeb",
+      color: "#92400e",
+      border: "#fcd34d",
+      icon: "🔑",
+    },
+  };
+
+  const getCfg = (action) =>
+    ACTION_CFG[action] || {
+      bg: "#f8fafc",
+      color: "#475569",
+      border: "#e4eaf0",
+      icon: "📋",
+    };
+
+  const fetchLogs = useCallback(
+    async (pg, act, srch, from, to) => {
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams({ page: pg, limit });
+        if (act) params.set("action", act);
+        if (srch) params.set("search", srch);
+        if (from) params.set("from", from);
+        if (to) params.set("to", `${to}T23:59:59`);
+        const res = await authenticatedFetch(
+          `${API_BASE}/auth/api/v1/admin/audit-logs?${params}`,
+        );
+        const data = await res.json();
+        if (!res.ok)
+          throw new Error(data.message || "Failed to load audit logs");
+        setLogs(data.data.logs);
+        setTotal(data.data.pagination.total);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [limit],
+  );
+
+  useEffect(() => {
+    fetchLogs(page, actionFilter, search, fromDate, toDate);
+  }, [page, actionFilter, fromDate, toDate, fetchLogs]);
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setPage(1);
+      fetchLogs(1, actionFilter, val, fromDate, toDate);
+    }, 400);
+  };
+
+  const handleFilterChange = (setter) => (e) => {
+    setter(e.target.value);
+    setPage(1);
+  };
+
+  const handleClearFilters = () => {
+    setActionFilter("");
+    setSearch("");
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+    fetchLogs(1, "", "", "", "");
+  };
+
+  const hasFilters = actionFilter || search || fromDate || toDate;
+
+  const formatTs = (ts) =>
+    new Date(ts).toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+  const humanAction = (action) =>
+    action.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return (
+    <>
+      <style>{`
+        .al-toolbar {
+          display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;
+        }
+        .al-search-wrap { position: relative; flex: 1; min-width: 180px; }
+        .al-search-icon {
+          position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+          color: #b0bec8; font-size: 14px; pointer-events: none;
+        }
+        .al-search {
+          width: 100%; padding: 8px 12px 8px 32px; border: 1px solid #e4eaf0;
+          border-radius: 7px; font-size: 13px; font-family: 'DM Sans', sans-serif;
+          color: #3a5068; background: #fff; box-sizing: border-box; transition: border-color 0.15s;
+        }
+        .al-search:focus { outline: none; border-color: #7dd8f8; }
+        .al-select {
+          padding: 8px 28px 8px 10px; border: 1px solid #e4eaf0; border-radius: 7px;
+          font-size: 13px; font-family: 'DM Sans', sans-serif; color: #3a5068;
+          background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b0bec8'/%3E%3C/svg%3E") no-repeat right 8px center;
+          appearance: none; cursor: pointer; transition: border-color 0.15s;
+        }
+        .al-select:focus { outline: none; border-color: #7dd8f8; }
+        .al-date {
+          padding: 8px 10px; border: 1px solid #e4eaf0; border-radius: 7px;
+          font-size: 12.5px; font-family: 'DM Sans', sans-serif; color: #3a5068;
+          background: #fff; cursor: pointer; transition: border-color 0.15s;
+        }
+        .al-date:focus { outline: none; border-color: #7dd8f8; }
+        .al-count { font-size: 12px; color: #7a8fa6; white-space: nowrap; }
+        .al-clear-btn {
+          padding: 7px 13px; border-radius: 7px; border: 1px solid #e4eaf0;
+          background: #fff8f0; color: #c2410c; font-size: 12px; font-family: 'DM Sans', sans-serif;
+          font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+        }
+        .al-clear-btn:hover { background: #ffedd5; border-color: #fb923c; }
+        .al-refresh-btn {
+          padding: 7px 13px; border-radius: 7px; border: 1px solid #e4eaf0; background: #f8fafc;
+          color: #0a3d62; font-size: 12px; font-family: 'DM Sans', sans-serif; font-weight: 600;
+          cursor: pointer; transition: all 0.15s; white-space: nowrap; display: flex;
+          align-items: center; gap: 4px;
+        }
+        .al-refresh-btn:hover:not(:disabled) { background: #eff6ff; border-color: #0a3d62; }
+        .al-refresh-btn:disabled { opacity: 0.5; cursor: default; }
+        .al-badge {
+          display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px;
+          border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; white-space: nowrap;
+        }
+        .al-actor { display: flex; flex-direction: column; }
+        .al-actor-name { font-weight: 600; color: #1a3a52; font-size: 13px; }
+        .al-actor-email { font-size: 11px; color: #7a8fa6; }
+        .al-exp-btn {
+          background: none; border: none; cursor: pointer; font-size: 11px; padding: 3px 7px;
+          border-radius: 4px; color: #7a8fa6; transition: all 0.15s;
+        }
+        .al-exp-btn:hover { background: #f0f4f8; color: #0a3d62; }
+        .al-detail-row > td {
+          background: #f8fbff !important; padding: 0 !important; border-bottom: 2px solid #e4eaf0 !important;
+        }
+        .al-detail-inner { padding: 14px 18px; font-size: 12.5px; color: #3a5068; }
+        .al-detail-pre {
+          background: #f0f4f8; border: 1px solid #e4eaf0; border-radius: 6px; padding: 10px 14px;
+          font-family: 'Courier New', monospace; font-size: 12px; color: #1a3a52;
+          white-space: pre-wrap; word-break: break-all; margin-top: 6px; max-height: 200px; overflow-y: auto;
+        }
+        .al-pagination {
+          display: flex; align-items: center; justify-content: space-between;
+          margin-top: 16px; flex-wrap: wrap; gap: 8px;
+        }
+        .al-pagination-info { font-size: 12px; color: #7a8fa6; }
+        .al-pagination-btns { display: flex; gap: 4px; }
+        .al-pg-btn {
+          min-width: 30px; height: 30px; padding: 0 8px; border-radius: 6px; border: 1px solid #e4eaf0;
+          background: #fff; font-size: 12px; font-family: 'DM Sans', sans-serif; font-weight: 600;
+          color: #3a5068; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center;
+        }
+        .al-pg-btn:hover:not(:disabled) { border-color: #0a3d62; color: #0a3d62; background: #eff6ff; }
+        .al-pg-btn.active { background: #0a3d62; color: #fff; border-color: #0a3d62; }
+        .al-pg-btn:disabled { opacity: 0.35; cursor: default; }
+        .al-pg-ellipsis { display: flex; align-items: center; padding: 0 4px; color: #b0bec8; font-size: 12px; }
+        .al-ip {
+          font-family: monospace; font-size: 11px; background: #f0f4f8; color: #475569;
+          padding: 2px 6px; border-radius: 4px;
+        }
+        @keyframes al-shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+        .al-skel td {
+          background: linear-gradient(90deg,#f0f4f8 25%,#e8eef5 50%,#f0f4f8 75%);
+          background-size: 400% 100%; animation: al-shimmer 1.2s infinite;
+        }
+        .al-skel td > div { height: 13px; border-radius: 4px; background: #e8eef5; }
+      `}</style>
+
+      {/* Toolbar */}
+      <div className="al-toolbar">
+        <div className="al-search-wrap">
+          <span className="al-search-icon">🔍</span>
+          <input
+            className="al-search"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={handleSearchChange}
+          />
+        </div>
+
+        <select
+          className="al-select"
+          value={actionFilter}
+          onChange={handleFilterChange(setActionFilter)}
+        >
+          <option value="">All Actions</option>
+          <option value="USER_UPDATED">User Updated</option>
+          <option value="USER_ACTIVATED">User Activated</option>
+          <option value="USER_DEACTIVATED">User Deactivated</option>
+          <option value="DOCTOR_APPROVED">Doctor Approved</option>
+          <option value="DOCTOR_REJECTED">Doctor Rejected</option>
+          <option value="USER_LOGIN">Login</option>
+          <option value="USER_LOGOUT">Logout</option>
+          <option value="PASSWORD_CHANGED">Password Changed</option>
+        </select>
+
+        <input
+          type="date"
+          className="al-date"
+          title="From date"
+          value={fromDate}
+          onChange={handleFilterChange(setFromDate)}
+        />
+        <input
+          type="date"
+          className="al-date"
+          title="To date"
+          value={toDate}
+          onChange={handleFilterChange(setToDate)}
+        />
+
+        {hasFilters && (
+          <button className="al-clear-btn" onClick={handleClearFilters}>
+            ✕ Clear
+          </button>
+        )}
+
+        <span className="al-count">
+          {total} event{total !== 1 ? "s" : ""}
+        </span>
+
+        <button
+          className="al-refresh-btn"
+          disabled={loading}
+          onClick={() =>
+            fetchLogs(page, actionFilter, search, fromDate, toDate)
+          }
+        >
+          🔄 {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            borderRadius: 7,
+            padding: "9px 14px",
+            fontSize: 13,
+            marginBottom: 12,
+          }}
+        >
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="ad-table-wrap">
+        <table className="ad-table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}></th>
+              <th>Timestamp</th>
+              <th>Actor</th>
+              <th>Action</th>
+              <th>Resource</th>
+              <th>IP Address</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <tr key={i} className="al-skel">
+                  {Array.from({ length: 7 }).map((__, j) => (
+                    <td key={j}>
+                      <div />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : logs.length === 0 ? (
+              <tr className="empty-row">
+                <td colSpan="7">
+                  {hasFilters
+                    ? "No events match the current filters"
+                    : "No activity logs yet. Admin actions will appear here."}
+                </td>
+              </tr>
+            ) : (
+              logs.map((log) => {
+                const cfg = getCfg(log.action);
+                const isExpanded = expandedId === log.id;
+                const hasDetails =
+                  log.details && Object.keys(log.details).length > 0;
+                return (
+                  <Fragment key={log.id}>
+                    <tr>
+                      <td>
+                        {hasDetails && (
+                          <button
+                            className="al-exp-btn"
+                            title="View details"
+                            onClick={() =>
+                              setExpandedId((id) =>
+                                id === log.id ? null : log.id,
+                              )
+                            }
+                          >
+                            {isExpanded ? "▼" : "▶"}
+                          </button>
+                        )}
+                      </td>
+                      <td
+                        style={{
+                          fontSize: 12,
+                          color: "#3a5068",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatTs(log.created_at)}
+                      </td>
+                      <td>
+                        {log.actor_name || log.actor_email ? (
+                          <div className="al-actor">
+                            <span className="al-actor-name">
+                              {log.actor_name || "—"}
+                            </span>
+                            <span className="al-actor-email">
+                              {log.actor_email || ""}
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ color: "#b0bec8", fontSize: 12 }}>
+                            System
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className="al-badge"
+                          style={{
+                            background: cfg.bg,
+                            color: cfg.color,
+                            borderColor: cfg.border,
+                          }}
+                        >
+                          {cfg.icon} {humanAction(log.action)}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12 }}>
+                        {log.resource_type && (
+                          <span
+                            style={{
+                              fontWeight: 600,
+                              color: "#0a3d62",
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            {log.resource_type}
+                          </span>
+                        )}
+                        {log.resource_id && (
+                          <span
+                            style={{
+                              display: "block",
+                              fontFamily: "monospace",
+                              fontSize: 10.5,
+                              color: "#b0bec8",
+                            }}
+                            title={log.resource_id}
+                          >
+                            {log.resource_id.length > 18
+                              ? `${log.resource_id.slice(0, 18)}…`
+                              : log.resource_id}
+                          </span>
+                        )}
+                        {!log.resource_type && !log.resource_id && (
+                          <span style={{ color: "#b0bec8", fontSize: 12 }}>
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {log.ip_address ? (
+                          <span className="al-ip">{log.ip_address}</span>
+                        ) : (
+                          <span style={{ color: "#b0bec8", fontSize: 12 }}>
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color:
+                              log.status === "success" ? "#15803d" : "#dc2626",
+                          }}
+                        >
+                          {log.status === "success" ? "✓ Success" : "✕ Failure"}
+                        </span>
+                      </td>
+                    </tr>
+
+                    {isExpanded && hasDetails && (
+                      <tr className="al-detail-row">
+                        <td colSpan="7">
+                          <div className="al-detail-inner">
+                            <strong style={{ color: "#0a3d62", fontSize: 12 }}>
+                              Event Details
+                            </strong>
+                            <pre className="al-detail-pre">
+                              {JSON.stringify(log.details, null, 2)}
+                            </pre>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {!loading && total > 0 && (
+        <div className="al-pagination">
+          <span className="al-pagination-info">
+            Showing {Math.min((page - 1) * limit + 1, total)}–
+            {Math.min(page * limit, total)} of {total}
+          </span>
+          <div className="al-pagination-btns">
+            <button
+              className="al-pg-btn"
+              disabled={page === 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              ‹
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(
+                (p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1,
+              )
+              .reduce((acc, p, idx, arr) => {
+                if (idx > 0 && p - arr[idx - 1] > 1) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "…" ? (
+                  <span key={`e${i}`} className="al-pg-ellipsis">
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={p}
+                    className={`al-pg-btn${page === p ? " active" : ""}`}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
+            <button
+              className="al-pg-btn"
+              disabled={page === totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 const pageTitles = {
   overview: "Overview",
   users: "User Management",
@@ -2982,27 +3526,12 @@ const AdminDashboard = ({ user: initialUser, onLogout }) => {
               <>
                 <div className="ad-page-head">
                   <h2>Activity Logs</h2>
-                  <p>Track all user actions and system events.</p>
+                  <p>
+                    Full audit trail of all admin actions and system events.
+                  </p>
                 </div>
                 <div className="ad-section">
-                  <div className="ad-table-wrap">
-                    <table className="ad-table">
-                      <thead>
-                        <tr>
-                          <th>Timestamp</th>
-                          <th>User</th>
-                          <th>Action</th>
-                          <th>Details</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="empty-row">
-                          <td colSpan="5">No activity logs available</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                  <ActivityLog />
                 </div>
               </>
             )}
