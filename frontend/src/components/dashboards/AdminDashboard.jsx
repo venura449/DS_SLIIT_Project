@@ -5,6 +5,17 @@ import { jsPDF } from "jspdf";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
+// Format large numbers to k, M, B, T format for readability
+const formatRevenue = (num) => {
+  if (!num || num === 0) return "LKR 0";
+  const absNum = Math.abs(num);
+  if (absNum >= 1e12) return `LKR ${(num / 1e12).toFixed(1)}T`;
+  if (absNum >= 1e9) return `LKR ${(num / 1e9).toFixed(1)}B`;
+  if (absNum >= 1e6) return `LKR ${(num / 1e6).toFixed(1)}M`;
+  if (absNum >= 1e3) return `LKR ${(num / 1e3).toFixed(1)}k`;
+  return `LKR ${num.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+};
+
 /* ── UserManagement sub-component ── */
 function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -1396,17 +1407,6 @@ const navItems = [
 
 /* ── Reports sub-component ── */
 function Reports() {
-  // Format large numbers to k, M, B, T format for readability
-  const formatRevenue = (num) => {
-    if (!num || num === 0) return "LKR 0";
-    const absNum = Math.abs(num);
-    if (absNum >= 1e12) return `LKR ${(num / 1e12).toFixed(1)}T`;
-    if (absNum >= 1e9) return `LKR ${(num / 1e9).toFixed(1)}B`;
-    if (absNum >= 1e6) return `LKR ${(num / 1e6).toFixed(1)}M`;
-    if (absNum >= 1e3) return `LKR ${(num / 1e3).toFixed(1)}k`;
-    return `LKR ${num.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  };
-
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
