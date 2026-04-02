@@ -116,6 +116,7 @@ const BookAppointment = ({ hideOverdues = false }) => {
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [bookingsError, setBookingsError] = useState("");
   const [cancellingId, setCancellingId] = useState(null);
+  const [reschedulingFrom, setReschedulingFrom] = useState(null); // appointment being rescheduled
 
   // Chat per appointment
   const [chatApptId, setChatApptId] = useState(null);
@@ -198,13 +199,14 @@ const BookAppointment = ({ hideOverdues = false }) => {
     setBookingLoading(true);
     setBookingError("");
 
-    const fee = selectedDoctor?.consultation_fee || 100; // Default to 100 if not set
-    console.log("Booking with:", {
-      slotId: bookingSlot.id,
-      fee,
-      doctor: selectedDoctor,
-    });
+    // Rescheduling reuses the existing payment — skip Stripe
+    if (reschedulingFrom) {
+      await handlePaymentSuccess();
+      setBookingLoading(false);
+      return;
+    }
 
+    const fee = selectedDoctor?.consultation_fee || 100; // Default to 100 if not set
     const result = await createPayment(bookingSlot.id, fee);
 
     if (result.success) {
@@ -234,6 +236,17 @@ const BookAppointment = ({ hideOverdues = false }) => {
       });
 
       if (res.success) {
+        // If rescheduling, cancel the old appointment automatically
+        if (reschedulingFrom) {
+          await appointmentService.cancelBooking(reschedulingFrom.id);
+          setMyBookings((prev) =>
+            prev.map((b) =>
+              b.id === reschedulingFrom.id ? { ...b, status: "cancelled" } : b,
+            ),
+          );
+          setReschedulingFrom(null);
+        }
+
         setBookingSuccess({
           doctor: selectedDoctor.name,
           date: fmtDate(bookingSlot.appointmentDate),
@@ -313,6 +326,19 @@ const BookAppointment = ({ hideOverdues = false }) => {
       setBookingsError(res.error);
     }
     setCancellingId(null);
+  };
+
+  /* ── reschedule booking ─────────────────────────────────────── */
+
+  const handleReschedule = (appt) => {
+    const doctor = doctors.find(
+      (d) => String(d.doctor_id) === String(appt.doctor_id),
+    );
+    setReschedulingFrom(appt);
+    setSelectedDoctor(doctor || null);
+    setCurrentWeek(getMonday(new Date()));
+    setBookingSuccess(null);
+    setView("book");
   };
 
   /* ── helpers ────────────────────────────────────────────────── */
@@ -488,6 +514,14 @@ const BookAppointment = ({ hideOverdues = false }) => {
         .ba-spec-pill { padding:5px 14px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; white-space:nowrap; }
         .ba-spec-pill:hover { border-color:#1a6fa0; color:#1a6fa0; }
         .ba-spec-pill.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
+
+        /* ── reschedule button + notice ── */
+        .ba-reschedule-btn { padding:5px 12px; border-radius:7px; border:1px solid #93c5fd; background:#eff6ff; color:#1d4ed8; font-size:11px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all .15s; flex-shrink:0; }
+        .ba-reschedule-btn:hover { background:#dbeafe; }
+        .ba-reschedule-notice { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#fffbeb; border:1.5px solid #fcd34d; border-radius:10px; font-size:13px; color:#92400e; margin-bottom:16px; }
+        .ba-reschedule-notice strong { font-weight:700; }
+        .ba-reschedule-cancel { margin-left:auto; padding:4px 10px; border-radius:6px; border:1px solid #fcd34d; background:#fef3c7; color:#92400e; font-size:11px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; white-space:nowrap; }
+        .ba-reschedule-cancel:hover { background:#fde68a; }
       `}</style>
 
       {/* ── View toggler ── */}
@@ -512,6 +546,24 @@ const BookAppointment = ({ hideOverdues = false }) => {
       {/* ══════════════════════ BOOK VIEW ══════════════════════════ */}
       {view === "book" && (
         <>
+          {/* Reschedule notice */}
+          {reschedulingFrom && (
+            <div className="ba-reschedule-notice">
+              <span>🔄</span>
+              <span>
+                Rescheduling appointment with{" "}
+                <strong>Dr. {reschedulingFrom.doctor_name}</strong>. Pick a new
+                slot — the old one will be cancelled automatically.
+              </span>
+              <button
+                className="ba-reschedule-cancel"
+                onClick={() => setReschedulingFrom(null)}
+              >
+                Discard
+              </button>
+            </div>
+          )}
+
           {/* Success banner */}
           {bookingSuccess && (
             <div className="ba-success">
@@ -891,7 +943,15 @@ const BookAppointment = ({ hideOverdues = false }) => {
                             {fetchingSession === b.id ? "\u2026" : "📹 Join"}
                           </button>
                         )}{" "}
-                      {b.status === "pending" && (
+                      {(b.status === "pending" || b.status === "confirmed") && (
+                        <button
+                          className="ba-reschedule-btn"
+                          onClick={() => handleReschedule(b)}
+                        >
+                          🔄 Reschedule
+                        </button>
+                      )}
+                      {(b.status === "pending" || b.status === "confirmed") && (
                         <button
                           className="ba-cancel-btn"
                           onClick={() => handleCancel(b.id)}
@@ -1084,7 +1144,13 @@ const BookAppointment = ({ hideOverdues = false }) => {
                 onClick={handleBook}
                 disabled={bookingLoading}
               >
-                {bookingLoading ? "Booking…" : "Confirm Appointment"}
+                {bookingLoading
+                  ? reschedulingFrom
+                    ? "Rescheduling…"
+                    : "Booking…"
+                  : reschedulingFrom
+                    ? "Confirm Reschedule"
+                    : "Confirm Appointment"}
               </button>
             </div>
           </div>
