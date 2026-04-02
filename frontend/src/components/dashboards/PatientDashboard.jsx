@@ -138,11 +138,19 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
     setUser(updatedUser);
   };
 
+  const userInitials = (user?.name || "P").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+  const todayLabel = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+  const upcomingAppointments = appointments.filter(
+    a => !isAppointmentOverdue(a) && !["completed","cancelled","ended"].includes(a.status)
+  );
+
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@400;500;600&display=swap');
 
+        /* ── Root layout ── */
         .pd-root {
           min-height: 100vh;
           display: flex;
@@ -160,6 +168,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           position: fixed;
           top: 0; left: 0;
           z-index: 100;
+          box-shadow: 3px 0 16px rgba(0,0,0,0.14);
         }
         .pd-brand {
           padding: 18px 16px 14px;
@@ -176,6 +185,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           border-radius: 8px;
           display: flex; align-items: center; justify-content: center;
           font-size: 17px;
+          overflow: hidden;
         }
         .pd-brand-name {
           font-family: 'Sora', sans-serif;
@@ -194,10 +204,19 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         }
         .pd-nav {
           flex: 1;
-          padding: 14px 10px;
+          padding: 10px 10px;
           display: flex;
           flex-direction: column;
           gap: 2px;
+          overflow-y: auto;
+        }
+        .pd-nav-section {
+          font-size: 9.5px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.9px;
+          color: rgba(255,255,255,0.28);
+          padding: 10px 11px 5px;
         }
         .pd-nav-btn {
           display: flex;
@@ -215,9 +234,22 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           width: 100%;
           text-align: left;
           font-family: 'DM Sans', sans-serif;
+          position: relative;
         }
-        .pd-nav-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
-        .pd-nav-btn.active { background: rgba(125,216,248,0.15); color: #7dd8f8; }
+        .pd-nav-btn:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); }
+        .pd-nav-btn.active {
+          background: rgba(125,216,248,0.15);
+          color: #7dd8f8;
+          font-weight: 600;
+        }
+        .pd-nav-btn.active::before {
+          content: '';
+          position: absolute;
+          left: 0; top: 20%; bottom: 20%;
+          width: 3px;
+          background: #7dd8f8;
+          border-radius: 0 3px 3px 0;
+        }
         .pd-nav-btn .ni { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
 
         .pd-footer {
@@ -229,14 +261,23 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           align-items: center;
           gap: 9px;
           margin-bottom: 10px;
+          padding: 6px 8px;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: background 0.15s;
         }
+        .pd-footer-user:hover { background: rgba(255,255,255,0.07); }
         .pd-avatar {
           width: 32px; height: 32px;
-          background: rgba(125,216,248,0.2);
+          background: linear-gradient(135deg, #1a6fa0, #7dd8f8);
           border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
-          font-size: 14px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #fff;
           flex-shrink: 0;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
         .pd-footer-name {
           font-size: 12.5px;
@@ -262,6 +303,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           font-size: 12px;
           font-weight: 500;
           transition: all 0.2s;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
         }
         .pd-signout:hover {
           background: rgba(255,70,70,0.15);
@@ -281,13 +323,15 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           background: #fff;
           border-bottom: 1px solid #e4eaf0;
           padding: 0 24px;
-          height: 52px;
+          height: 54px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           position: sticky;
           top: 0; z-index: 50;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
+        .pd-topbar-left { display: flex; align-items: center; gap: 10px; }
         .pd-topbar-title {
           font-family: 'Sora', sans-serif;
           font-size: 15px;
@@ -301,25 +345,108 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           align-items: center;
           gap: 12px;
         }
+        .pd-topbar-date {
+          font-size: 12px;
+          color: #b0bec8;
+          font-weight: 500;
+        }
         .pd-profile-btn {
           width: 36px;
           height: 36px;
           border-radius: 50%;
-          background: linear-gradient(135deg, rgba(10, 61, 98, 0.1), rgba(125, 216, 248, 0.1));
-          border: 1.5px solid #e4eaf0;
+          background: linear-gradient(135deg, #1a6fa0, #7dd8f8);
+          border: 2px solid #e4eaf0;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           transition: all 0.2s;
-          font-size: 16px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #fff;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
         .pd-profile-btn:hover {
-          background: linear-gradient(135deg, rgba(10, 61, 98, 0.15), rgba(125, 216, 248, 0.15));
           border-color: #7dd8f8;
           transform: scale(1.05);
+          box-shadow: 0 0 0 3px rgba(125,216,248,0.25);
         }
         .pd-content { padding: 22px 24px; }
+
+        /* ── Welcome banner ── */
+        .pd-welcome {
+          background: linear-gradient(135deg, #0a3d62 0%, #1a6fa0 55%, #2590c4 100%);
+          border-radius: 14px;
+          padding: 26px 30px;
+          margin-bottom: 20px;
+          position: relative;
+          overflow: hidden;
+          color: #fff;
+        }
+        .pd-welcome::before {
+          content: '';
+          position: absolute;
+          top: -50px; right: -50px;
+          width: 200px; height: 200px;
+          border-radius: 50%;
+          background: rgba(125,216,248,0.1);
+          pointer-events: none;
+        }
+        .pd-welcome::after {
+          content: '';
+          position: absolute;
+          bottom: -35px; right: 100px;
+          width: 140px; height: 140px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.05);
+          pointer-events: none;
+        }
+        .pd-welcome-title {
+          font-family: 'Sora', sans-serif;
+          font-size: 22px;
+          font-weight: 700;
+          margin-bottom: 6px;
+          position: relative;
+        }
+        .pd-welcome-sub {
+          font-size: 13.5px;
+          color: rgba(255,255,255,0.75);
+          position: relative;
+          max-width: 520px;
+        }
+        .pd-welcome-actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 20px;
+          flex-wrap: wrap;
+          position: relative;
+        }
+        .pd-welcome-btn {
+          padding: 9px 18px;
+          border-radius: 8px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.18s;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border: none;
+        }
+        .pd-welcome-btn-primary {
+          background: #fff;
+          color: #0a3d62;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        }
+        .pd-welcome-btn-primary:hover { background: rgba(255,255,255,0.92); transform: translateY(-1px); }
+        .pd-welcome-btn-ghost {
+          background: rgba(255,255,255,0.12);
+          color: #fff;
+          border: 1.5px solid rgba(255,255,255,0.25) !important;
+        }
+        .pd-welcome-btn-ghost:hover { background: rgba(255,255,255,0.22); }
 
         /* ── Stat cards ── */
         .pd-stats {
@@ -331,14 +458,24 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         .pd-stat {
           background: #fff;
           border: 1px solid #e4eaf0;
-          border-radius: 10px;
-          padding: 16px 18px;
+          border-radius: 12px;
+          padding: 18px 20px;
+          position: relative;
+          overflow: hidden;
+          transition: box-shadow 0.2s, transform 0.2s;
+        }
+        .pd-stat:hover { box-shadow: 0 4px 18px rgba(10,61,98,0.09); transform: translateY(-1px); }
+        .pd-stat-accent {
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          border-radius: 12px 12px 0 0;
         }
         .pd-stat-top {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          margin-bottom: 10px;
+          margin-bottom: 12px;
         }
         .pd-stat-label {
           font-size: 11.5px;
@@ -347,14 +484,19 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           letter-spacing: 0.5px;
           color: #7a8fa6;
         }
-        .pd-stat-icon { font-size: 20px; opacity: 0.65; }
+        .pd-stat-icon-wrap {
+          width: 36px; height: 36px;
+          border-radius: 9px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 17px;
+        }
         .pd-stat-value {
           font-family: 'Sora', sans-serif;
-          font-size: 26px;
+          font-size: 28px;
           font-weight: 700;
           color: #0a3d62;
           line-height: 1;
-          margin-bottom: 3px;
+          margin-bottom: 4px;
         }
         .pd-stat-sub { font-size: 11px; color: #b0bec8; }
 
@@ -362,7 +504,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         .pd-section {
           background: #fff;
           border: 1px solid #e4eaf0;
-          border-radius: 10px;
+          border-radius: 12px;
           padding: 20px 22px;
           margin-bottom: 14px;
         }
@@ -370,7 +512,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 14px;
+          margin-bottom: 16px;
         }
         .pd-section-title {
           font-family: 'Sora', sans-serif;
@@ -383,11 +525,11 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         }
         .pd-empty {
           text-align: center;
-          padding: 28px 16px;
+          padding: 34px 16px;
           color: #b0bec8;
         }
-        .pd-empty-icon { font-size: 32px; margin-bottom: 8px; opacity: 0.45; }
-        .pd-empty p { font-size: 13px; }
+        .pd-empty-icon { font-size: 36px; margin-bottom: 10px; opacity: 0.5; }
+        .pd-empty p { font-size: 13px; margin-bottom: 14px; }
 
         /* ── Buttons ── */
         .pd-btn {
@@ -406,64 +548,190 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         .pd-btn-primary {
           background: linear-gradient(135deg, #0a3d62, #1a6fa0);
           color: #fff;
-          box-shadow: 0 2px 6px rgba(10,61,98,0.18);
+          box-shadow: 0 2px 8px rgba(10,61,98,0.2);
         }
-        .pd-btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+        .pd-btn-primary:hover { opacity: 0.88; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(10,61,98,0.25); }
         .pd-btn-ghost {
           background: #f0f4f8;
           color: #1a6fa0;
+          border: 1px solid #e4eaf0 !important;
         }
-        .pd-btn-ghost:hover { background: #e0ecf6; }
+        .pd-btn-ghost:hover { background: #deeaf5; border-color: #c7dff0 !important; }
+        .pd-btn-success {
+          background: linear-gradient(135deg, #15803d, #22c55e);
+          color: #fff;
+          box-shadow: 0 2px 8px rgba(21,128,61,0.2);
+        }
+        .pd-btn-success:hover { opacity: 0.88; transform: translateY(-1px); }
+        .pd-btn-sm { padding: 6px 12px; font-size: 12px; }
 
         /* ── Page header ── */
-        .pd-page-head { margin-bottom: 18px; }
+        .pd-page-head { margin-bottom: 20px; }
         .pd-page-head h2 {
           font-family: 'Sora', sans-serif;
-          font-size: 19px;
+          font-size: 20px;
           font-weight: 700;
           color: #0a3d62;
-          margin-bottom: 2px;
+          margin-bottom: 3px;
         }
         .pd-page-head p { font-size: 13px; color: #7a8fa6; }
 
-        /* ── Quick actions row ── */
-        .pd-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        /* ── Overview grid ── */
+        .pd-overview-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+          margin-bottom: 14px;
+        }
+        .pd-mini-appt {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          border: 1px solid #e4eaf0;
+          border-radius: 8px;
+          transition: border-color 0.15s, background 0.15s;
+        }
+        .pd-mini-appt:hover { border-color: #c7dff0; background: #fafcff; }
+        .pd-mini-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .pd-mini-body { flex: 1; min-width: 0; }
+        .pd-mini-title { font-size: 12.5px; font-weight: 600; color: #0a3d62; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pd-mini-sub { font-size: 11.5px; color: #7a8fa6; }
 
         /* ── Lists ── */
         .pd-list { display: flex; flex-direction: column; gap: 10px; }
-        .pd-list-card { border: 1px solid #e4eaf0; border-radius: 10px; padding: 12px 14px; background: #fff; display: flex; gap: 10px; align-items: flex-start; }
-        .pd-list-icon { width: 36px; height: 36px; border-radius: 10px; background: #eff6ff; border: 1px solid #c7dff0; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+        .pd-list-card {
+          border: 1px solid #e4eaf0;
+          border-radius: 10px;
+          padding: 14px 16px;
+          background: #fff;
+          display: flex;
+          gap: 12px;
+          align-items: flex-start;
+          transition: box-shadow 0.15s, border-color 0.15s;
+        }
+        .pd-list-card:hover { border-color: #c7dff0; box-shadow: 0 2px 10px rgba(10,61,98,0.06); }
+        .pd-list-icon {
+          width: 40px; height: 40px;
+          border-radius: 10px;
+          background: #eff6ff;
+          border: 1px solid #c7dff0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 17px;
+          flex-shrink: 0;
+        }
+        .pd-list-icon.success { background: #f0fdf4; border-color: #86efac; }
+        .pd-list-icon.warn { background: #fffbeb; border-color: #fde047; }
+        .pd-list-icon.danger { background: #fff1f2; border-color: #fca5a5; }
         .pd-list-body { flex: 1; min-width: 0; }
-        .pd-list-title { font-family: 'Sora', sans-serif; font-size: 13.5px; font-weight: 700; color: #0a3d62; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .pd-chip { padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid #e4eaf0; background: #f8fafc; color: #3a5068; }
+        .pd-list-title { font-family: 'Sora', sans-serif; font-size: 13.5px; font-weight: 700; color: #0a3d62; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .pd-chip { padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid #e4eaf0; background: #f8fafc; color: #3a5068; white-space: nowrap; }
         .pd-chip.success { background: #f0fdf4; border-color: #86efac; color: #15803d; }
         .pd-chip.warn { background: #fef9c3; border-color: #fde047; color: #a16207; }
         .pd-chip.info { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
         .pd-chip.danger { background: #fff1f1; border-color: #fca5a5; color: #dc2626; }
         .pd-chip.overdue { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
-        .pd-list-card.overdue { opacity: .6; }
+        .pd-list-card.overdue { opacity: .7; border-color: #fecaca; background: #fff9f9; }
         .pd-list-meta { font-size: 12.5px; color: #7a8fa6; margin-bottom: 4px; }
         .pd-list-note { font-size: 12.5px; color: #3a5068; }
-        .pd-loading { text-align: center; padding: 18px 8px; color: #7a8fa6; font-size: 13px; }
+        .pd-list-actions { display: flex; gap: 6px; margin-top: 8px; }
 
-        /* ── Settings Section ── */
-        .pd-settings-option { display: flex; align-items: center; gap: 16px; padding: 18px 16px; background: #f8fafc; border: 1.5px solid #e4eaf0; border-radius: 10px; }
+        /* ── Animated loading dots ── */
+        .pd-loading {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 24px 8px;
+          color: #7a8fa6;
+          font-size: 13px;
+        }
+        .pd-loading-dot {
+          width: 6px; height: 6px;
+          border-radius: 50%;
+          background: #7dd8f8;
+          animation: pd-bounce 1s infinite;
+        }
+        .pd-loading-dot:nth-child(2) { animation-delay: 0.15s; }
+        .pd-loading-dot:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes pd-bounce { 0%,80%,100%{opacity:0.3;transform:scale(0.8)} 40%{opacity:1;transform:scale(1)} }
+
+        /* ── Settings ── */
+        .pd-settings-stack { display: flex; flex-direction: column; gap: 10px; }
+        .pd-settings-option {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 16px 18px;
+          background: #f8fafc;
+          border: 1.5px solid #e4eaf0;
+          border-radius: 10px;
+          transition: border-color 0.15s;
+        }
+        .pd-settings-option:hover { border-color: #c7dff0; }
+        .pd-settings-option-icon {
+          width: 38px; height: 38px;
+          border-radius: 9px;
+          background: #eff6ff;
+          border: 1px solid #c7dff0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 16px;
+          flex-shrink: 0;
+        }
         .pd-settings-content { flex: 1; }
-        .pd-settings-label { font-size: 14px; font-weight: 600; color: #0a3d62; margin-bottom: 4px; }
+        .pd-settings-label { font-size: 14px; font-weight: 600; color: #0a3d62; margin-bottom: 3px; }
         .pd-settings-description { font-size: 12.5px; color: #7a8fa6; }
         .pd-settings-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .pd-settings-tooltip-wrapper { position: relative; display: flex; align-items: center; flex-shrink: 0; }
-        .pd-settings-help-icon { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid #7a8fa6; color: #7a8fa6; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; cursor: help; transition: all .15s; }
+        .pd-settings-tooltip-wrapper { position: relative; display: flex; align-items: center; }
+        .pd-settings-help-icon {
+          width: 22px; height: 22px;
+          border-radius: 50%;
+          border: 1.5px solid #b0bec8;
+          color: #b0bec8;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 11px; font-weight: 700;
+          cursor: help;
+          transition: all .15s;
+        }
         .pd-settings-help-icon:hover { border-color: #1a6fa0; color: #1a6fa0; background: #eff6ff; }
-        .pd-settings-tooltip { position: absolute; bottom: calc(100% + 12px); left: -100px; background: #0a3d62; color: #fff; padding: 10px 12px; border-radius: 8px; font-size: 12px; width: 200px; white-space: normal; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,.15); z-index: 10; }
-        .pd-settings-tooltip::after { content: ''; position: absolute; top: 100%; left: 112px; border: 6px solid transparent; border-top-color: #0a3d62; }
-        .pd-toggle-overdue { display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all .15s; flex-shrink: 0; }
-        .pd-toggle-overdue-switch { width: 40px; height: 22px; border-radius: 11px; background: #e4eaf0; border: 1.5px solid #e4eaf0; position: relative; transition: all .15s; display: flex; align-items: center; padding: 2px; }
-        .pd-toggle-overdue-switch.active { background: #86efac; border-color: #4ade80; }
-        .pd-toggle-overdue-circle { width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: all .15s; }
-        .pd-toggle-overdue-switch.active .pd-toggle-overdue-circle { transform: translateX(18px); }
+        .pd-settings-tooltip {
+          position: absolute;
+          bottom: calc(100% + 10px);
+          left: -100px;
+          background: #0a3d62;
+          color: #fff;
+          padding: 10px 12px;
+          border-radius: 8px;
+          font-size: 12px;
+          width: 200px;
+          white-space: normal;
+          line-height: 1.5;
+          box-shadow: 0 4px 14px rgba(0,0,0,.18);
+          z-index: 10;
+        }
+        .pd-settings-tooltip::after { content: ''; position: absolute; top: 100%; left: 108px; border: 6px solid transparent; border-top-color: #0a3d62; }
+        .pd-toggle-wrap { display: flex; align-items: center; cursor: pointer; flex-shrink: 0; }
+        .pd-toggle-switch {
+          width: 40px; height: 22px;
+          border-radius: 11px;
+          background: #e4eaf0;
+          border: 1.5px solid #d0d8e4;
+          position: relative;
+          transition: all .2s;
+          display: flex; align-items: center;
+          padding: 2px;
+        }
+        .pd-toggle-switch.active { background: #7dd8f8; border-color: #38bdf8; }
+        .pd-toggle-circle {
+          width: 16px; height: 16px;
+          border-radius: 50%;
+          background: #fff;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+          transition: all .2s;
+        }
+        .pd-toggle-switch.active .pd-toggle-circle { transform: translateX(18px); }
 
-        /* ── Hamburger button (hidden on desktop) ── */
+        /* ── Hamburger (mobile) ── */
         .pd-menu-btn {
           display: none;
           align-items: center;
@@ -480,15 +748,19 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         }
         .pd-menu-btn:hover { background: #f0f4f8; }
 
-        /* ── Sidebar drawer backdrop (hidden on desktop) ── */
+        /* ── Sidebar backdrop (mobile) ── */
         .pd-sidebar-backdrop { display: none; }
 
         /* ── Responsive ── */
+        @media (max-width: 900px) {
+          .pd-overview-grid { grid-template-columns: 1fr; }
+        }
         @media (max-width: 768px) {
           .pd-sidebar {
             transform: translateX(-100%);
             transition: transform 0.25s ease;
             z-index: 200;
+            box-shadow: none;
           }
           .pd-sidebar.open {
             transform: translateX(0);
@@ -503,72 +775,81 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           }
           .pd-main { margin-left: 0; }
           .pd-menu-btn { display: flex; }
-          .pd-topbar { padding: 0 14px; gap: 8px; }
-          .pd-topbar-right { gap: 8px; }
+          .pd-topbar { padding: 0 14px; }
+          .pd-topbar-date { display: none; }
           .pd-topbar-username { display: none; }
           .pd-content { padding: 14px 12px; }
           .pd-stats { grid-template-columns: 1fr 1fr; }
           .pd-section { padding: 16px 14px; }
           .pd-section-header { flex-wrap: wrap; gap: 8px; }
-          .pd-actions { gap: 8px; }
           .pd-btn { padding: 7px 13px; font-size: 12.5px; }
           .pd-page-head h2 { font-size: 17px; }
+          .pd-welcome { padding: 20px 20px; }
+          .pd-welcome-title { font-size: 18px; }
           .pd-settings-option { flex-direction: column; align-items: flex-start; gap: 12px; }
           .pd-settings-controls { width: 100%; justify-content: flex-end; }
           .pd-settings-tooltip { left: unset; right: 0; }
           .pd-settings-tooltip::after { left: unset; right: 14px; }
         }
-
-        @media (max-width: 420px) {
+        @media (max-width: 480px) {
           .pd-stats { grid-template-columns: 1fr; }
-          .pd-topbar { height: 48px; }
+          .pd-topbar { height: 50px; }
           .pd-stat-value { font-size: 22px; }
-          .pd-list-card { padding: 10px 11px; }
+          .pd-list-card { padding: 11px 12px; }
+          .pd-welcome-actions { flex-direction: column; }
+          .pd-welcome-btn { justify-content: center; }
         }
       `}</style>
 
       <div className="pd-root">
-        {/* Mobile backdrop */}
+        {/* Mobile sidebar backdrop */}
         {sidebarOpen && (
-          <div
-            className="pd-sidebar-backdrop"
-            onClick={() => setSidebarOpen(false)}
-          />
+          <div className="pd-sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
         )}
 
-        {/* Sidebar */}
+        {/* ── Sidebar ── */}
         <aside className={`pd-sidebar${sidebarOpen ? " open" : ""}`}>
           <div className="pd-brand">
             <div className="pd-brand-row">
               <div className="pd-brand-icon">
-                <img
-                  src="/src/assets/favicon.png"
-                  alt="MediConnect Logo"
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                  }}
-                />
+                <img src="/src/assets/favicon.png" alt="MediConnect" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               </div>
               <div>
-                <div className="pd-brand-name">
-                  Medi<span>Connect</span>
-                </div>
+                <div className="pd-brand-name">Medi<span>Connect</span></div>
                 <div className="pd-brand-sub">Patient Portal</div>
               </div>
             </div>
           </div>
 
           <nav className="pd-nav">
-            {navItems.map((item) => (
+            <div className="pd-nav-section">Main</div>
+            {navItems.slice(0, 2).map((item) => (
               <button
                 key={item.id}
                 className={`pd-nav-btn${activeTab === item.id ? " active" : ""}`}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setSidebarOpen(false);
-                }}
+                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+              >
+                <span className="ni">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+            <div className="pd-nav-section">Health</div>
+            {navItems.slice(2, 5).map((item) => (
+              <button
+                key={item.id}
+                className={`pd-nav-btn${activeTab === item.id ? " active" : ""}`}
+                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+              >
+                <span className="ni">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+            <div className="pd-nav-section">Account</div>
+            {navItems.slice(5).map((item) => (
+              <button
+                key={item.id}
+                className={`pd-nav-btn${activeTab === item.id ? " active" : ""}`}
+                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
               >
                 <span className="ni">{item.icon}</span>
                 {item.label}
@@ -577,211 +858,199 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           </nav>
 
           <div className="pd-footer">
-            <div className="pd-footer-user">
-              <div className="pd-avatar">👤</div>
+            <div className="pd-footer-user" onClick={() => setShowProfile(true)} title="Edit profile">
+              <div className="pd-avatar">{userInitials}</div>
               <div className="pd-footer-meta">
                 <div className="pd-footer-name">{user?.name || "Patient"}</div>
                 <div className="pd-footer-email">{user?.email || ""}</div>
               </div>
             </div>
-            <button className="pd-signout" onClick={handleLogout}>
-              Sign out
-            </button>
+            <button className="pd-signout" onClick={handleLogout}>← Sign out</button>
           </div>
         </aside>
 
-        {/* Main area */}
+        {/* ── Main area ── */}
         <div className="pd-main">
           <header className="pd-topbar">
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button
-                className="pd-menu-btn"
-                onClick={() => setSidebarOpen((v) => !v)}
-                aria-label="Toggle menu"
-              >
-                ☰
-              </button>
+            <div className="pd-topbar-left">
+              <button className="pd-menu-btn" onClick={() => setSidebarOpen(v => !v)} aria-label="Toggle menu">☰</button>
               <span className="pd-topbar-title">{pageTitles[activeTab]}</span>
             </div>
             <div className="pd-topbar-right">
+              <span className="pd-topbar-date">{todayLabel}</span>
               <NotificationBell userId={user?.id} />
-              <button
-                className="pd-profile-btn"
-                onClick={() => setShowProfile(true)}
-                title="Edit profile"
-              >
-                👤
+              <button className="pd-profile-btn" onClick={() => setShowProfile(true)} title="Edit profile">
+                {userInitials}
               </button>
-              <span className="pd-topbar-username">
-                {user?.name || "Patient"}
-              </span>
+              <span className="pd-topbar-username">{user?.name || "Patient"}</span>
             </div>
           </header>
 
           <div className="pd-content">
+
+            {/* ──────── OVERVIEW ──────── */}
             {activeTab === "overview" && (
               <>
-                <div className="pd-page-head">
-                  <h2>Good day, {user?.name || "Patient"} 👋</h2>
-                  <p>Here's a summary of your health activity.</p>
+                {/* Welcome banner */}
+                <div className="pd-welcome">
+                  <div className="pd-welcome-title">Good day, {user?.name?.split(" ")[0] || "Patient"} 👋</div>
+                  <div className="pd-welcome-sub">Here's a summary of your health activity. Stay on top of your appointments and prescriptions.</div>
+                  <div className="pd-welcome-actions">
+                    <button className="pd-welcome-btn pd-welcome-btn-primary" onClick={() => setActiveTab("appointments")}>
+                      📅 Book Appointment
+                    </button>
+                    <button className="pd-welcome-btn pd-welcome-btn-ghost" onClick={() => setActiveTab("consultations")}>
+                      💬 Start Consultation
+                    </button>
+                    <button className="pd-welcome-btn pd-welcome-btn-ghost" onClick={() => setActiveTab("medical")}>
+                      📋 View Records
+                    </button>
+                  </div>
                 </div>
+
+                {/* Stat cards */}
                 <div className="pd-stats">
                   <div className="pd-stat">
+                    <div className="pd-stat-accent" style={{ background: "linear-gradient(90deg,#0a3d62,#1a6fa0)" }} />
                     <div className="pd-stat-top">
                       <div className="pd-stat-label">Appointments</div>
-                      <div className="pd-stat-icon">📅</div>
+                      <div className="pd-stat-icon-wrap" style={{ background: "#eff6ff" }}>📅</div>
                     </div>
-                    <div className="pd-stat-value">
-                      {appointmentsLoading ? "…" : appointments.length}
-                    </div>
-                    <div className="pd-stat-sub">
-                      {appointmentsLoading
-                        ? "Loading"
-                        : appointments.length === 0
-                          ? "No appointments yet"
-                          : "Includes pending/confirmed"}
-                    </div>
+                    <div className="pd-stat-value">{appointmentsLoading ? "…" : appointments.length}</div>
+                    <div className="pd-stat-sub">{appointmentsLoading ? "Loading…" : appointments.length === 0 ? "No appointments yet" : "Total bookings"}</div>
                   </div>
                   <div className="pd-stat">
+                    <div className="pd-stat-accent" style={{ background: "linear-gradient(90deg,#7c3aed,#a855f7)" }} />
                     <div className="pd-stat-top">
                       <div className="pd-stat-label">Consultations</div>
-                      <div className="pd-stat-icon">💬</div>
+                      <div className="pd-stat-icon-wrap" style={{ background: "#f5f3ff" }}>💬</div>
                     </div>
-                    <div className="pd-stat-value">
-                      {consultationsLoading ? "…" : consultations.length}
-                    </div>
-                    <div className="pd-stat-sub">
-                      {consultationsLoading
-                        ? "Loading"
-                        : consultations.length === 0
-                          ? "No sessions"
-                          : "Active & past sessions"}
-                    </div>
+                    <div className="pd-stat-value">{consultationsLoading ? "…" : consultations.length}</div>
+                    <div className="pd-stat-sub">{consultationsLoading ? "Loading…" : consultations.length === 0 ? "No sessions" : "Active & past sessions"}</div>
                   </div>
                   <div className="pd-stat">
+                    <div className="pd-stat-accent" style={{ background: "linear-gradient(90deg,#15803d,#22c55e)" }} />
                     <div className="pd-stat-top">
                       <div className="pd-stat-label">Prescriptions</div>
-                      <div className="pd-stat-icon">💊</div>
+                      <div className="pd-stat-icon-wrap" style={{ background: "#f0fdf4" }}>💊</div>
                     </div>
-                    <div className="pd-stat-value">
-                      {prescriptionsLoading ? "…" : prescriptions.length}
-                    </div>
-                    <div className="pd-stat-sub">
-                      {prescriptionsLoading
-                        ? "Loading"
-                        : prescriptions.length === 0
-                          ? "No prescriptions yet"
-                          : "Latest issued scripts"}
-                    </div>
+                    <div className="pd-stat-value">{prescriptionsLoading ? "…" : prescriptions.length}</div>
+                    <div className="pd-stat-sub">{prescriptionsLoading ? "Loading…" : prescriptions.length === 0 ? "No prescriptions yet" : "Issued by doctors"}</div>
                   </div>
                 </div>
-                <div className="pd-section">
-                  <div
-                    className="pd-section-title"
-                    style={{ marginBottom: "12px" }}
-                  >
-                    ⚡ Quick Actions
+
+                {/* Overview grid: upcoming + recent prescriptions */}
+                <div className="pd-overview-grid">
+                  <div className="pd-section" style={{ marginBottom: 0 }}>
+                    <div className="pd-section-header">
+                      <div className="pd-section-title">📅 Upcoming Appointments</div>
+                      <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={() => setActiveTab("appointments")}>See all</button>
+                    </div>
+                    {appointmentsLoading ? (
+                      <div className="pd-loading"><div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/></div>
+                    ) : upcomingAppointments.length === 0 ? (
+                      <div className="pd-empty" style={{ padding: "22px 8px" }}>
+                        <div className="pd-empty-icon">📅</div>
+                        <p>No upcoming appointments</p>
+                        <button className="pd-btn pd-btn-primary pd-btn-sm" onClick={() => setActiveTab("appointments")}>Book now</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {upcomingAppointments.slice(0, 3).map(a => (
+                          <div key={a.id} className="pd-mini-appt">
+                            <div className="pd-mini-dot" style={{ background: a.status === "confirmed" ? "#22c55e" : "#f59e0b" }} />
+                            <div className="pd-mini-body">
+                              <div className="pd-mini-title">Dr. {a.doctor_name || "Doctor"}</div>
+                              <div className="pd-mini-sub">{fmtDate(a.appointment_date)} · {fmtTime(a.start_time)}</div>
+                            </div>
+                            <span className={`pd-chip ${a.status === "confirmed" ? "success" : "warn"}`}>{a.status || "pending"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="pd-actions">
-                    <button
-                      className="pd-btn pd-btn-primary"
-                      onClick={() => setActiveTab("appointments")}
-                    >
-                      Book Appointment
-                    </button>
-                    <button
-                      className="pd-btn pd-btn-primary"
-                      onClick={() => setActiveTab("consultations")}
-                    >
-                      Start Consultation
-                    </button>
-                    <button
-                      className="pd-btn pd-btn-ghost"
-                      onClick={() => setActiveTab("medical")}
-                    >
-                      View Records
-                    </button>
+
+                  <div className="pd-section" style={{ marginBottom: 0 }}>
+                    <div className="pd-section-header">
+                      <div className="pd-section-title">💊 Recent Prescriptions</div>
+                      <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={() => setActiveTab("prescriptions")}>See all</button>
+                    </div>
+                    {prescriptionsLoading ? (
+                      <div className="pd-loading"><div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/></div>
+                    ) : prescriptions.length === 0 ? (
+                      <div className="pd-empty" style={{ padding: "22px 8px" }}>
+                        <div className="pd-empty-icon">💊</div>
+                        <p>No prescriptions yet</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {prescriptions.slice(0, 3).map(p => (
+                          <div key={p.id} className="pd-mini-appt">
+                            <div className="pd-mini-dot" style={{ background: "#22c55e" }} />
+                            <div className="pd-mini-body">
+                              <div className="pd-mini-title">{p.doctor_name ? `Dr. ${p.doctor_name}` : "Prescription"}</div>
+                              <div className="pd-mini-sub">{fmtDate(p.appointment_date || p.createdAt)}{p.diagnosis ? ` · ${p.diagnosis}` : ""}</div>
+                            </div>
+                            <span className="pd-chip success">Issued</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
             )}
 
+            {/* ──────── APPOINTMENTS ──────── */}
             {activeTab === "appointments" && (
               <>
                 <div className="pd-page-head">
-                  <h2>Appointments</h2>
+                  <h2>📅 Appointments</h2>
                   <p>Manage your upcoming and past appointments.</p>
                 </div>
                 <div className="pd-section">
                   <div className="pd-section-header">
-                    <div className="pd-section-title">Your bookings</div>
-                    <button
-                      className="pd-btn pd-btn-ghost"
-                      onClick={loadAppointments}
-                    >
-                      Refresh
-                    </button>
+                    <div className="pd-section-title">Your Bookings</div>
+                    <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={loadAppointments}>🔄 Refresh</button>
                   </div>
                   {appointmentsLoading ? (
-                    <div className="pd-loading">Loading appointments…</div>
+                    <div className="pd-loading">
+                      <div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/>
+                      <span style={{ marginLeft: 6 }}>Loading appointments…</span>
+                    </div>
                   ) : appointmentsError ? (
                     <div className="pd-empty">⚠ {appointmentsError}</div>
                   ) : appointments.length === 0 ? (
                     <div className="pd-empty">
                       <div className="pd-empty-icon">📅</div>
-                      <p>No appointments yet.</p>
+                      <p>No appointments yet. Book one below.</p>
                     </div>
                   ) : (
                     <div className="pd-list">
-                      {appointments
-                        .filter(
-                          (a) => !hideOverdues || !isAppointmentOverdue(a),
-                        )
-                        .slice(0, 4)
-                        .map((a) => (
-                          <div
-                            key={a.id}
-                            className={`pd-list-card${isAppointmentOverdue(a) ? " overdue" : ""}`}
-                          >
-                            <div className="pd-list-icon">
-                              {isAppointmentOverdue(a) ? "⏰" : "📅"}
+                      {appointments.filter(a => !hideOverdues || !isAppointmentOverdue(a)).map(a => {
+                        const overdue = isAppointmentOverdue(a);
+                        const iconVariant = overdue ? "danger" : a.status === "confirmed" ? "success" : a.status === "cancelled" ? "danger" : "warn";
+                        return (
+                          <div key={a.id} className={`pd-list-card${overdue ? " overdue" : ""}`}>
+                            <div className={`pd-list-icon ${iconVariant}`}>
+                              {overdue ? "⏰" : a.is_telemedicine ? "💻" : "📅"}
                             </div>
                             <div className="pd-list-body">
                               <div className="pd-list-title">
                                 Dr. {a.doctor_name || "Doctor"}
-                                <span
-                                  className={`pd-chip ${
-                                    isAppointmentOverdue(a)
-                                      ? "overdue"
-                                      : a.status === "confirmed"
-                                        ? "success"
-                                        : a.status === "pending"
-                                          ? "warn"
-                                          : a.status === "cancelled"
-                                            ? "danger"
-                                            : "info"
-                                  }`}
-                                >
-                                  {isAppointmentOverdue(a)
-                                    ? "Overdue"
-                                    : a.status || "Pending"}
+                                <span className={`pd-chip ${overdue ? "overdue" : a.status === "confirmed" ? "success" : a.status === "pending" ? "warn" : a.status === "cancelled" ? "danger" : "info"}`}>
+                                  {overdue ? "Overdue" : a.status || "Pending"}
                                 </span>
-                                {a.is_telemedicine && (
-                                  <span className="pd-chip info">
-                                    Telemedicine
-                                  </span>
-                                )}
+                                {a.is_telemedicine && <span className="pd-chip info">Telemedicine</span>}
                               </div>
                               <div className="pd-list-meta">
-                                {fmtDate(a.appointment_date || "")} ·{" "}
-                                {fmtTime(a.start_time)} – {fmtTime(a.end_time)}
+                                {fmtDate(a.appointment_date || "")} · {fmtTime(a.start_time)} – {fmtTime(a.end_time)}
                               </div>
-                              {a.reason && (
-                                <div className="pd-list-note">{a.reason}</div>
-                              )}
+                              {a.reason && <div className="pd-list-note">{a.reason}</div>}
                             </div>
                           </div>
-                        ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -791,105 +1060,84 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               </>
             )}
 
-            {activeTab === "medical" && (
-              <>
-                <MedicalRecords />
-              </>
-            )}
+            {/* ──────── MEDICAL ──────── */}
+            {activeTab === "medical" && <MedicalRecords />}
 
+            {/* ──────── CONSULTATIONS ──────── */}
             {activeTab === "consultations" && (
               <>
                 <div className="pd-page-head">
-                  <h2>Video Consultations</h2>
-                  <p>Connect with your doctor face-to-face.</p>
+                  <h2>💬 Video Consultations</h2>
+                  <p>Connect with your doctor face-to-face via video call.</p>
                 </div>
                 <div className="pd-section">
                   <div className="pd-section-header">
-                    <div className="pd-section-title">Sessions</div>
-                    <button
-                      className="pd-btn pd-btn-ghost"
-                      onClick={loadConsultations}
-                    >
-                      Refresh
-                    </button>
+                    <div className="pd-section-title">Your Sessions</div>
+                    <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={loadConsultations}>🔄 Refresh</button>
                   </div>
                   {consultationsLoading ? (
-                    <div className="pd-loading">Loading consultations…</div>
+                    <div className="pd-loading">
+                      <div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/>
+                      <span style={{ marginLeft: 6 }}>Loading consultations…</span>
+                    </div>
                   ) : consultationsError ? (
                     <div className="pd-empty">⚠ {consultationsError}</div>
                   ) : consultations.length === 0 ? (
                     <div className="pd-empty">
                       <div className="pd-empty-icon">💬</div>
-                      <p>No consultations yet. Book a telemedicine slot.</p>
+                      <p>No consultations yet. Book a telemedicine appointment.</p>
+                      <button className="pd-btn pd-btn-primary pd-btn-sm" onClick={() => setActiveTab("appointments")}>Book Telemedicine</button>
                     </div>
                   ) : (
                     <div className="pd-list">
-                      {consultations
-                        .filter(
-                          (c) =>
-                            !(hideEndedConsultations && c.status === "ended"),
-                        )
-                        .slice(0, 4)
-                        .map((c) => (
-                          <div
-                            key={c.id || c.session_id}
-                            className="pd-list-card"
-                          >
-                            <div className="pd-list-icon">💬</div>
+                      {consultations.filter(c => !(hideEndedConsultations && c.status === "ended")).map(c => {
+                        const isActive = c.status === "ongoing" || c.status === "scheduled";
+                        return (
+                          <div key={c.id || c.session_id} className="pd-list-card">
+                            <div className={`pd-list-icon ${c.status === "ongoing" ? "success" : c.status === "ended" ? "danger" : ""}`}>
+                              {c.status === "ongoing" ? "🟢" : c.status === "ended" ? "🔴" : "💬"}
+                            </div>
                             <div className="pd-list-body">
                               <div className="pd-list-title">
                                 Session {c.session_id || c.id || ""}
-                                <span
-                                  className={`pd-chip ${
-                                    c.status === "ongoing"
-                                      ? "success"
-                                      : c.status === "ended"
-                                        ? "danger"
-                                        : "info"
-                                  }`}
-                                >
-                                  {c.status || "scheduled"}
+                                <span className={`pd-chip ${c.status === "ongoing" ? "success" : c.status === "ended" ? "danger" : "info"}`}>
+                                  {c.status || "Scheduled"}
                                 </span>
                               </div>
-                              <div className="pd-list-meta">
-                                Appointment #
-                                {c.appointment_id || c.appointmentId || ""}
-                              </div>
-                              {c.meeting_room && (
-                                <div className="pd-list-note">
-                                  Room: {c.meeting_room}
+                              <div className="pd-list-meta">Appointment #{c.appointment_id || c.appointmentId || ""}</div>
+                              {c.meeting_room && <div className="pd-list-note">Room: {c.meeting_room}</div>}
+                              {isActive && (
+                                <div className="pd-list-actions">
+                                  <button className="pd-btn pd-btn-success pd-btn-sm" onClick={() => setActiveTab("appointments")}>▶ Join Session</button>
                                 </div>
                               )}
                             </div>
                           </div>
-                        ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               </>
             )}
 
+            {/* ──────── PRESCRIPTIONS ──────── */}
             {activeTab === "prescriptions" && (
               <>
                 <div className="pd-page-head">
-                  <h2>Prescriptions</h2>
-                  <p>
-                    Prescriptions issued by your doctor after confirmed
-                    appointments.
-                  </p>
+                  <h2>💊 Prescriptions</h2>
+                  <p>Prescriptions issued by your doctor after confirmed appointments.</p>
                 </div>
                 <div className="pd-section">
                   <div className="pd-section-header">
-                    <div className="pd-section-title">Recent prescriptions</div>
-                    <button
-                      className="pd-btn pd-btn-ghost"
-                      onClick={loadPrescriptions}
-                    >
-                      Refresh
-                    </button>
+                    <div className="pd-section-title">All Prescriptions</div>
+                    <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={loadPrescriptions}>🔄 Refresh</button>
                   </div>
                   {prescriptionsLoading ? (
-                    <div className="pd-loading">Loading prescriptions…</div>
+                    <div className="pd-loading">
+                      <div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/>
+                      <span style={{ marginLeft: 6 }}>Loading prescriptions…</span>
+                    </div>
                   ) : prescriptionsError ? (
                     <div className="pd-empty">⚠ {prescriptionsError}</div>
                   ) : prescriptions.length === 0 ? (
@@ -899,24 +1147,16 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                     </div>
                   ) : (
                     <div className="pd-list">
-                      {prescriptions.slice(0, 4).map((p) => (
+                      {prescriptions.map(p => (
                         <div key={p.id} className="pd-list-card">
-                          <div className="pd-list-icon">💊</div>
+                          <div className="pd-list-icon success">💊</div>
                           <div className="pd-list-body">
                             <div className="pd-list-title">
-                              {p.doctor_name
-                                ? `Dr. ${p.doctor_name}`
-                                : "Prescription"}
+                              {p.doctor_name ? `Dr. ${p.doctor_name}` : "Prescription"}
                               <span className="pd-chip success">Issued</span>
                             </div>
-                            <div className="pd-list-meta">
-                              {fmtDate(p.appointment_date || p.createdAt)}
-                            </div>
-                            {p.diagnosis && (
-                              <div className="pd-list-note">
-                                Diagnosis: {p.diagnosis}
-                              </div>
-                            )}
+                            <div className="pd-list-meta">{fmtDate(p.appointment_date || p.createdAt)}</div>
+                            {p.diagnosis && <div className="pd-list-note">Diagnosis: {p.diagnosis}</div>}
                           </div>
                         </div>
                       ))}
@@ -929,102 +1169,97 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               </>
             )}
 
+            {/* ──────── SETTINGS ──────── */}
             {activeTab === "settings" && (
               <>
                 <div className="pd-page-head">
-                  <h2>Settings</h2>
-                  <p>Manage your preferences and view settings.</p>
+                  <h2>⚙ Settings</h2>
+                  <p>Manage your account preferences and display settings.</p>
                 </div>
+
+                {/* Profile card */}
                 <div className="pd-section">
                   <div className="pd-section-header">
-                    <div className="pd-section-title">Appointment Display</div>
+                    <div className="pd-section-title">👤 Profile</div>
                   </div>
-                  <div className="pd-settings-option">
-                    <div className="pd-settings-content">
-                      <div className="pd-settings-label">
-                        Hide Overdue Appointments
+                  <div className="pd-settings-stack">
+                    <div className="pd-settings-option">
+                      <div className="pd-settings-option-icon">✏️</div>
+                      <div className="pd-settings-content">
+                        <div className="pd-settings-label">Edit Profile</div>
+                        <div className="pd-settings-description">Update your name, phone and personal details.</div>
                       </div>
-                      <div className="pd-settings-description">
-                        {hideOverdues
-                          ? "Overdue appointments are currently hidden"
-                          : "Overdue appointments are shown"}
-                      </div>
-                    </div>
-                    <div className="pd-settings-controls">
-                      <div className="pd-settings-tooltip-wrapper">
-                        <div
-                          className="pd-settings-help-icon"
-                          onMouseEnter={() => setShowOverdueTooltip(true)}
-                          onMouseLeave={() => setShowOverdueTooltip(false)}
-                        >
-                          ?
-                        </div>
-                        {showOverdueTooltip && (
-                          <div className="pd-settings-tooltip">
-                            Hide appointments that have passed their date but
-                            aren't completed.
-                          </div>
-                        )}
-                      </div>
-                      <div
-                        className="pd-toggle-overdue"
-                        onClick={() => setHideOverdues(!hideOverdues)}
-                      >
-                        <div
-                          className={`pd-toggle-overdue-switch${hideOverdues ? " active" : ""}`}
-                        >
-                          <div className="pd-toggle-overdue-circle"></div>
-                        </div>
+                      <div className="pd-settings-controls">
+                        <button className="pd-btn pd-btn-primary pd-btn-sm" onClick={() => setShowProfile(true)}>Edit Profile</button>
                       </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Display preferences */}
                 <div className="pd-section">
                   <div className="pd-section-header">
-                    <div className="pd-section-title">Consultation Display</div>
+                    <div className="pd-section-title">🖥 Display Preferences</div>
                   </div>
-                  <div className="pd-settings-option">
-                    <div className="pd-settings-content">
-                      <div className="pd-settings-label">
-                        Hide Ended Consultations
+                  <div className="pd-settings-stack">
+                    <div className="pd-settings-option">
+                      <div className="pd-settings-option-icon">⏰</div>
+                      <div className="pd-settings-content">
+                        <div className="pd-settings-label">Hide Overdue Appointments</div>
+                        <div className="pd-settings-description">
+                          {hideOverdues ? "Overdue appointments are currently hidden." : "Overdue appointments are shown with a warning."}
+                        </div>
                       </div>
-                      <div className="pd-settings-description">
-                        {hideEndedConsultations
-                          ? "Ended consultations are currently hidden"
-                          : "Ended consultations are shown"}
+                      <div className="pd-settings-controls">
+                        <div className="pd-settings-tooltip-wrapper">
+                          <div
+                            className="pd-settings-help-icon"
+                            onMouseEnter={() => setShowOverdueTooltip(true)}
+                            onMouseLeave={() => setShowOverdueTooltip(false)}
+                          >?</div>
+                          {showOverdueTooltip && (
+                            <div className="pd-settings-tooltip">
+                              Hide appointments that have passed their date but aren't marked complete or cancelled.
+                            </div>
+                          )}
+                        </div>
+                        <div className="pd-toggle-wrap" onClick={() => setHideOverdues(!hideOverdues)}>
+                          <div className={`pd-toggle-switch${hideOverdues ? " active" : ""}`}>
+                            <div className="pd-toggle-circle" />
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div className="pd-settings-controls">
-                      <div className="pd-settings-tooltip-wrapper">
-                        <div
-                          className="pd-settings-help-icon"
-                          onMouseEnter={() => setShowEndedConsultTooltip(true)}
-                          onMouseLeave={() => setShowEndedConsultTooltip(false)}
-                        >
-                          ?
+
+                    <div className="pd-settings-option">
+                      <div className="pd-settings-option-icon">🔴</div>
+                      <div className="pd-settings-content">
+                        <div className="pd-settings-label">Hide Ended Consultations</div>
+                        <div className="pd-settings-description">
+                          {hideEndedConsultations ? "Ended consultations are currently hidden." : "Ended consultations are shown in your list."}
                         </div>
-                        {showEndedConsultTooltip && (
-                          <div className="pd-settings-tooltip">
-                            Hide consultations that have already ended from the
-                            Consultations tab.
-                          </div>
-                        )}
                       </div>
-                      <div
-                        className="pd-toggle-overdue"
-                        onClick={() => {
+                      <div className="pd-settings-controls">
+                        <div className="pd-settings-tooltip-wrapper">
+                          <div
+                            className="pd-settings-help-icon"
+                            onMouseEnter={() => setShowEndedConsultTooltip(true)}
+                            onMouseLeave={() => setShowEndedConsultTooltip(false)}
+                          >?</div>
+                          {showEndedConsultTooltip && (
+                            <div className="pd-settings-tooltip">
+                              Hide consultations that have already ended from the Consultations tab.
+                            </div>
+                          )}
+                        </div>
+                        <div className="pd-toggle-wrap" onClick={() => {
                           const next = !hideEndedConsultations;
                           setHideEndedConsultations(next);
-                          localStorage.setItem(
-                            "patientHideEndedConsultations",
-                            JSON.stringify(next),
-                          );
-                        }}
-                      >
-                        <div
-                          className={`pd-toggle-overdue-switch${hideEndedConsultations ? " active" : ""}`}
-                        >
-                          <div className="pd-toggle-overdue-circle"></div>
+                          localStorage.setItem("patientHideEndedConsultations", JSON.stringify(next));
+                        }}>
+                          <div className={`pd-toggle-switch${hideEndedConsultations ? " active" : ""}`}>
+                            <div className="pd-toggle-circle" />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1032,6 +1267,7 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                 </div>
               </>
             )}
+
           </div>
         </div>
       </div>
@@ -1050,3 +1286,4 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
 };
 
 export default PatientDashboard;
+
