@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { logoutUser } from "../../utils/authService";
 import { getMyBookings } from "../../utils/appointmentService";
 import { getSessions } from "../../utils/telemedicineService";
@@ -72,6 +72,9 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
   const [prescriptions, setPrescriptions] = useState([]);
   const [prescriptionsLoading, setPrescriptionsLoading] = useState(false);
   const [prescriptionsError, setPrescriptionsError] = useState("");
+  const [apptSearch, setApptSearch] = useState("");
+  const [apptStatusFilter, setApptStatusFilter] = useState("all");
+  const [apptTypeFilter, setApptTypeFilter] = useState("all");
   const [hideOverdues, setHideOverdues] = useState(() => {
     try {
       const saved = localStorage.getItem("patientHideOverdues");
@@ -138,11 +141,22 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
     setUser(updatedUser);
   };
 
-  const userInitials = (user?.name || "P").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
-  const todayLabel = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const userInitials = (user?.name || "P")
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+  const todayLabel = new Date().toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 
   const upcomingAppointments = appointments.filter(
-    a => !isAppointmentOverdue(a) && !["completed","cancelled","ended"].includes(a.status)
+    (a) =>
+      !isAppointmentOverdue(a) &&
+      !["completed", "cancelled", "ended"].includes(a.status),
   );
 
   return (
@@ -636,6 +650,72 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         .pd-list-note { font-size: 12.5px; color: #3a5068; }
         .pd-list-actions { display: flex; gap: 6px; margin-top: 8px; }
 
+        /* ── Bookings toolbar (search + filter) ── */
+        .pd-bookings-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-bottom: 14px;
+        }
+        .pd-search-wrap {
+          position: relative;
+          flex: 1;
+          min-width: 180px;
+        }
+        .pd-search-icon {
+          position: absolute;
+          left: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 13px;
+          pointer-events: none;
+          line-height: 1;
+        }
+        .pd-search-input {
+          width: 100%;
+          padding: 7px 32px 7px 30px;
+          border: 1px solid #dce6ef;
+          border-radius: 8px;
+          font-size: 13px;
+          color: #1a3550;
+          background: #f7fafc;
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color 0.18s, box-shadow 0.18s;
+        }
+        .pd-search-input:focus {
+          border-color: #1a6fa0;
+          box-shadow: 0 0 0 3px rgba(26,111,160,0.1);
+          background: #fff;
+        }
+        .pd-search-clear {
+          position: absolute;
+          right: 8px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 12px;
+          color: #7a8fa6;
+          padding: 2px 4px;
+          line-height: 1;
+        }
+        .pd-search-clear:hover { color: #dc2626; }
+        .pd-filter-select {
+          padding: 7px 10px;
+          border: 1px solid #dce6ef;
+          border-radius: 8px;
+          font-size: 13px;
+          color: #1a3550;
+          background: #f7fafc;
+          outline: none;
+          cursor: pointer;
+          transition: border-color 0.18s;
+        }
+        .pd-filter-select:focus { border-color: #1a6fa0; box-shadow: 0 0 0 3px rgba(26,111,160,0.1); }
+
         /* ── Animated loading dots ── */
         .pd-loading {
           display: flex;
@@ -804,7 +884,10 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
       <div className="pd-root">
         {/* Mobile sidebar backdrop */}
         {sidebarOpen && (
-          <div className="pd-sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+          <div
+            className="pd-sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+          />
         )}
 
         {/* ── Sidebar ── */}
@@ -812,10 +895,20 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           <div className="pd-brand">
             <div className="pd-brand-row">
               <div className="pd-brand-icon">
-                <img src="/src/assets/favicon.png" alt="MediConnect" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                <img
+                  src="/src/assets/favicon.png"
+                  alt="MediConnect"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
               </div>
               <div>
-                <div className="pd-brand-name">Medi<span>Connect</span></div>
+                <div className="pd-brand-name">
+                  Medi<span>Connect</span>
+                </div>
                 <div className="pd-brand-sub">Patient Portal</div>
               </div>
             </div>
@@ -827,7 +920,10 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               <button
                 key={item.id}
                 className={`pd-nav-btn${activeTab === item.id ? " active" : ""}`}
-                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setSidebarOpen(false);
+                }}
               >
                 <span className="ni">{item.icon}</span>
                 {item.label}
@@ -838,7 +934,10 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               <button
                 key={item.id}
                 className={`pd-nav-btn${activeTab === item.id ? " active" : ""}`}
-                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setSidebarOpen(false);
+                }}
               >
                 <span className="ni">{item.icon}</span>
                 {item.label}
@@ -849,7 +948,10 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               <button
                 key={item.id}
                 className={`pd-nav-btn${activeTab === item.id ? " active" : ""}`}
-                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setSidebarOpen(false);
+                }}
               >
                 <span className="ni">{item.icon}</span>
                 {item.label}
@@ -858,14 +960,20 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
           </nav>
 
           <div className="pd-footer">
-            <div className="pd-footer-user" onClick={() => setShowProfile(true)} title="Edit profile">
+            <div
+              className="pd-footer-user"
+              onClick={() => setShowProfile(true)}
+              title="Edit profile"
+            >
               <div className="pd-avatar">{userInitials}</div>
               <div className="pd-footer-meta">
                 <div className="pd-footer-name">{user?.name || "Patient"}</div>
                 <div className="pd-footer-email">{user?.email || ""}</div>
               </div>
             </div>
-            <button className="pd-signout" onClick={handleLogout}>← Sign out</button>
+            <button className="pd-signout" onClick={handleLogout}>
+              ← Sign out
+            </button>
           </div>
         </aside>
 
@@ -873,36 +981,61 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         <div className="pd-main">
           <header className="pd-topbar">
             <div className="pd-topbar-left">
-              <button className="pd-menu-btn" onClick={() => setSidebarOpen(v => !v)} aria-label="Toggle menu">☰</button>
+              <button
+                className="pd-menu-btn"
+                onClick={() => setSidebarOpen((v) => !v)}
+                aria-label="Toggle menu"
+              >
+                ☰
+              </button>
               <span className="pd-topbar-title">{pageTitles[activeTab]}</span>
             </div>
             <div className="pd-topbar-right">
               <span className="pd-topbar-date">{todayLabel}</span>
               <NotificationBell userId={user?.id} />
-              <button className="pd-profile-btn" onClick={() => setShowProfile(true)} title="Edit profile">
+              <button
+                className="pd-profile-btn"
+                onClick={() => setShowProfile(true)}
+                title="Edit profile"
+              >
                 {userInitials}
               </button>
-              <span className="pd-topbar-username">{user?.name || "Patient"}</span>
+              <span className="pd-topbar-username">
+                {user?.name || "Patient"}
+              </span>
             </div>
           </header>
 
           <div className="pd-content">
-
             {/* ──────── OVERVIEW ──────── */}
             {activeTab === "overview" && (
               <>
                 {/* Welcome banner */}
                 <div className="pd-welcome">
-                  <div className="pd-welcome-title">Good day, {user?.name?.split(" ")[0] || "Patient"} 👋</div>
-                  <div className="pd-welcome-sub">Here's a summary of your health activity. Stay on top of your appointments and prescriptions.</div>
+                  <div className="pd-welcome-title">
+                    Good day, {user?.name?.split(" ")[0] || "Patient"} 👋
+                  </div>
+                  <div className="pd-welcome-sub">
+                    Here's a summary of your health activity. Stay on top of
+                    your appointments and prescriptions.
+                  </div>
                   <div className="pd-welcome-actions">
-                    <button className="pd-welcome-btn pd-welcome-btn-primary" onClick={() => setActiveTab("appointments")}>
+                    <button
+                      className="pd-welcome-btn pd-welcome-btn-primary"
+                      onClick={() => setActiveTab("appointments")}
+                    >
                       📅 Book Appointment
                     </button>
-                    <button className="pd-welcome-btn pd-welcome-btn-ghost" onClick={() => setActiveTab("consultations")}>
+                    <button
+                      className="pd-welcome-btn pd-welcome-btn-ghost"
+                      onClick={() => setActiveTab("consultations")}
+                    >
                       💬 Start Consultation
                     </button>
-                    <button className="pd-welcome-btn pd-welcome-btn-ghost" onClick={() => setActiveTab("medical")}>
+                    <button
+                      className="pd-welcome-btn pd-welcome-btn-ghost"
+                      onClick={() => setActiveTab("medical")}
+                    >
                       📋 View Records
                     </button>
                   </div>
@@ -911,31 +1044,85 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                 {/* Stat cards */}
                 <div className="pd-stats">
                   <div className="pd-stat">
-                    <div className="pd-stat-accent" style={{ background: "linear-gradient(90deg,#0a3d62,#1a6fa0)" }} />
+                    <div
+                      className="pd-stat-accent"
+                      style={{
+                        background: "linear-gradient(90deg,#0a3d62,#1a6fa0)",
+                      }}
+                    />
                     <div className="pd-stat-top">
                       <div className="pd-stat-label">Appointments</div>
-                      <div className="pd-stat-icon-wrap" style={{ background: "#eff6ff" }}>📅</div>
+                      <div
+                        className="pd-stat-icon-wrap"
+                        style={{ background: "#eff6ff" }}
+                      >
+                        📅
+                      </div>
                     </div>
-                    <div className="pd-stat-value">{appointmentsLoading ? "…" : appointments.length}</div>
-                    <div className="pd-stat-sub">{appointmentsLoading ? "Loading…" : appointments.length === 0 ? "No appointments yet" : "Total bookings"}</div>
+                    <div className="pd-stat-value">
+                      {appointmentsLoading ? "…" : appointments.length}
+                    </div>
+                    <div className="pd-stat-sub">
+                      {appointmentsLoading
+                        ? "Loading…"
+                        : appointments.length === 0
+                          ? "No appointments yet"
+                          : "Total bookings"}
+                    </div>
                   </div>
                   <div className="pd-stat">
-                    <div className="pd-stat-accent" style={{ background: "linear-gradient(90deg,#7c3aed,#a855f7)" }} />
+                    <div
+                      className="pd-stat-accent"
+                      style={{
+                        background: "linear-gradient(90deg,#7c3aed,#a855f7)",
+                      }}
+                    />
                     <div className="pd-stat-top">
                       <div className="pd-stat-label">Consultations</div>
-                      <div className="pd-stat-icon-wrap" style={{ background: "#f5f3ff" }}>💬</div>
+                      <div
+                        className="pd-stat-icon-wrap"
+                        style={{ background: "#f5f3ff" }}
+                      >
+                        💬
+                      </div>
                     </div>
-                    <div className="pd-stat-value">{consultationsLoading ? "…" : consultations.length}</div>
-                    <div className="pd-stat-sub">{consultationsLoading ? "Loading…" : consultations.length === 0 ? "No sessions" : "Active & past sessions"}</div>
+                    <div className="pd-stat-value">
+                      {consultationsLoading ? "…" : consultations.length}
+                    </div>
+                    <div className="pd-stat-sub">
+                      {consultationsLoading
+                        ? "Loading…"
+                        : consultations.length === 0
+                          ? "No sessions"
+                          : "Active & past sessions"}
+                    </div>
                   </div>
                   <div className="pd-stat">
-                    <div className="pd-stat-accent" style={{ background: "linear-gradient(90deg,#15803d,#22c55e)" }} />
+                    <div
+                      className="pd-stat-accent"
+                      style={{
+                        background: "linear-gradient(90deg,#15803d,#22c55e)",
+                      }}
+                    />
                     <div className="pd-stat-top">
                       <div className="pd-stat-label">Prescriptions</div>
-                      <div className="pd-stat-icon-wrap" style={{ background: "#f0fdf4" }}>💊</div>
+                      <div
+                        className="pd-stat-icon-wrap"
+                        style={{ background: "#f0fdf4" }}
+                      >
+                        💊
+                      </div>
                     </div>
-                    <div className="pd-stat-value">{prescriptionsLoading ? "…" : prescriptions.length}</div>
-                    <div className="pd-stat-sub">{prescriptionsLoading ? "Loading…" : prescriptions.length === 0 ? "No prescriptions yet" : "Issued by doctors"}</div>
+                    <div className="pd-stat-value">
+                      {prescriptionsLoading ? "…" : prescriptions.length}
+                    </div>
+                    <div className="pd-stat-sub">
+                      {prescriptionsLoading
+                        ? "Loading…"
+                        : prescriptions.length === 0
+                          ? "No prescriptions yet"
+                          : "Issued by doctors"}
+                    </div>
                   </div>
                 </div>
 
@@ -943,27 +1130,66 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                 <div className="pd-overview-grid">
                   <div className="pd-section" style={{ marginBottom: 0 }}>
                     <div className="pd-section-header">
-                      <div className="pd-section-title">📅 Upcoming Appointments</div>
-                      <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={() => setActiveTab("appointments")}>See all</button>
+                      <div className="pd-section-title">
+                        📅 Upcoming Appointments
+                      </div>
+                      <button
+                        className="pd-btn pd-btn-ghost pd-btn-sm"
+                        onClick={() => setActiveTab("appointments")}
+                      >
+                        See all
+                      </button>
                     </div>
                     {appointmentsLoading ? (
-                      <div className="pd-loading"><div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/></div>
+                      <div className="pd-loading">
+                        <div className="pd-loading-dot" />
+                        <div className="pd-loading-dot" />
+                        <div className="pd-loading-dot" />
+                      </div>
                     ) : upcomingAppointments.length === 0 ? (
                       <div className="pd-empty" style={{ padding: "22px 8px" }}>
                         <div className="pd-empty-icon">📅</div>
                         <p>No upcoming appointments</p>
-                        <button className="pd-btn pd-btn-primary pd-btn-sm" onClick={() => setActiveTab("appointments")}>Book now</button>
+                        <button
+                          className="pd-btn pd-btn-primary pd-btn-sm"
+                          onClick={() => setActiveTab("appointments")}
+                        >
+                          Book now
+                        </button>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {upcomingAppointments.slice(0, 3).map(a => (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                        }}
+                      >
+                        {upcomingAppointments.slice(0, 3).map((a) => (
                           <div key={a.id} className="pd-mini-appt">
-                            <div className="pd-mini-dot" style={{ background: a.status === "confirmed" ? "#22c55e" : "#f59e0b" }} />
+                            <div
+                              className="pd-mini-dot"
+                              style={{
+                                background:
+                                  a.status === "confirmed"
+                                    ? "#22c55e"
+                                    : "#f59e0b",
+                              }}
+                            />
                             <div className="pd-mini-body">
-                              <div className="pd-mini-title">Dr. {a.doctor_name || "Doctor"}</div>
-                              <div className="pd-mini-sub">{fmtDate(a.appointment_date)} · {fmtTime(a.start_time)}</div>
+                              <div className="pd-mini-title">
+                                Dr. {a.doctor_name || "Doctor"}
+                              </div>
+                              <div className="pd-mini-sub">
+                                {fmtDate(a.appointment_date)} ·{" "}
+                                {fmtTime(a.start_time)}
+                              </div>
                             </div>
-                            <span className={`pd-chip ${a.status === "confirmed" ? "success" : "warn"}`}>{a.status || "pending"}</span>
+                            <span
+                              className={`pd-chip ${a.status === "confirmed" ? "success" : "warn"}`}
+                            >
+                              {a.status || "pending"}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -972,24 +1198,51 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
 
                   <div className="pd-section" style={{ marginBottom: 0 }}>
                     <div className="pd-section-header">
-                      <div className="pd-section-title">💊 Recent Prescriptions</div>
-                      <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={() => setActiveTab("prescriptions")}>See all</button>
+                      <div className="pd-section-title">
+                        💊 Recent Prescriptions
+                      </div>
+                      <button
+                        className="pd-btn pd-btn-ghost pd-btn-sm"
+                        onClick={() => setActiveTab("prescriptions")}
+                      >
+                        See all
+                      </button>
                     </div>
                     {prescriptionsLoading ? (
-                      <div className="pd-loading"><div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/></div>
+                      <div className="pd-loading">
+                        <div className="pd-loading-dot" />
+                        <div className="pd-loading-dot" />
+                        <div className="pd-loading-dot" />
+                      </div>
                     ) : prescriptions.length === 0 ? (
                       <div className="pd-empty" style={{ padding: "22px 8px" }}>
                         <div className="pd-empty-icon">💊</div>
                         <p>No prescriptions yet</p>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {prescriptions.slice(0, 3).map(p => (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                        }}
+                      >
+                        {prescriptions.slice(0, 3).map((p) => (
                           <div key={p.id} className="pd-mini-appt">
-                            <div className="pd-mini-dot" style={{ background: "#22c55e" }} />
+                            <div
+                              className="pd-mini-dot"
+                              style={{ background: "#22c55e" }}
+                            />
                             <div className="pd-mini-body">
-                              <div className="pd-mini-title">{p.doctor_name ? `Dr. ${p.doctor_name}` : "Prescription"}</div>
-                              <div className="pd-mini-sub">{fmtDate(p.appointment_date || p.createdAt)}{p.diagnosis ? ` · ${p.diagnosis}` : ""}</div>
+                              <div className="pd-mini-title">
+                                {p.doctor_name
+                                  ? `Dr. ${p.doctor_name}`
+                                  : "Prescription"}
+                              </div>
+                              <div className="pd-mini-sub">
+                                {fmtDate(p.appointment_date || p.createdAt)}
+                                {p.diagnosis ? ` · ${p.diagnosis}` : ""}
+                              </div>
                             </div>
                             <span className="pd-chip success">Issued</span>
                           </div>
@@ -1006,56 +1259,208 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               <>
                 <div className="pd-page-head">
                   <h2>📅 Appointments</h2>
-                  <p>Manage your upcoming and past appointments.</p>
+                  <p>
+                    Find a doctor and manage your upcoming and past
+                    appointments.
+                  </p>
                 </div>
+
+                {/* ── Find a Doctor & Book ── */}
                 <div className="pd-section">
                   <div className="pd-section-header">
-                    <div className="pd-section-title">Your Bookings</div>
-                    <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={loadAppointments}>🔄 Refresh</button>
+                    <div className="pd-section-title">
+                      🔍 Find a Doctor &amp; Book
+                    </div>
                   </div>
+                  <BookAppointment hideOverdues={hideOverdues} />
+                </div>
+
+                {/* ── Your Bookings ── */}
+                <div className="pd-section">
+                  <div className="pd-section-header">
+                    <div className="pd-section-title">
+                      {"\uD83D\uDCC5"} Your Bookings
+                    </div>
+                    <button
+                      className="pd-btn pd-btn-ghost pd-btn-sm"
+                      onClick={loadAppointments}
+                    >
+                      🔄 Refresh
+                    </button>
+                  </div>
+
+                  {/* ── Search & Filter Bar ── */}
+                  <div className="pd-bookings-toolbar">
+                    <div className="pd-search-wrap">
+                      <span className="pd-search-icon">🔍</span>
+                      <input
+                        type="text"
+                        className="pd-search-input"
+                        placeholder="Search by doctor or reason…"
+                        value={apptSearch}
+                        onChange={(e) => setApptSearch(e.target.value)}
+                      />
+                      {apptSearch && (
+                        <button
+                          className="pd-search-clear"
+                          onClick={() => setApptSearch("")}
+                          aria-label="Clear search"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <select
+                      className="pd-filter-select"
+                      value={apptStatusFilter}
+                      onChange={(e) => setApptStatusFilter(e.target.value)}
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                    <select
+                      className="pd-filter-select"
+                      value={apptTypeFilter}
+                      onChange={(e) => setApptTypeFilter(e.target.value)}
+                    >
+                      <option value="all">All Types</option>
+                      <option value="in-person">In-Person</option>
+                      <option value="telemedicine">Telemedicine</option>
+                    </select>
+                    {(apptSearch ||
+                      apptStatusFilter !== "all" ||
+                      apptTypeFilter !== "all") && (
+                      <button
+                        className="pd-btn pd-btn-ghost pd-btn-sm"
+                        onClick={() => {
+                          setApptSearch("");
+                          setApptStatusFilter("all");
+                          setApptTypeFilter("all");
+                        }}
+                      >
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
+
                   {appointmentsLoading ? (
                     <div className="pd-loading">
-                      <div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/>
-                      <span style={{ marginLeft: 6 }}>Loading appointments…</span>
+                      <div className="pd-loading-dot" />
+                      <div className="pd-loading-dot" />
+                      <div className="pd-loading-dot" />
+                      <span style={{ marginLeft: 6 }}>
+                        Loading appointments…
+                      </span>
                     </div>
                   ) : appointmentsError ? (
                     <div className="pd-empty">⚠ {appointmentsError}</div>
                   ) : appointments.length === 0 ? (
                     <div className="pd-empty">
                       <div className="pd-empty-icon">📅</div>
-                      <p>No appointments yet. Book one below.</p>
+                      <p>
+                        No appointments yet. Use the form above to book one.
+                      </p>
                     </div>
                   ) : (
-                    <div className="pd-list">
-                      {appointments.filter(a => !hideOverdues || !isAppointmentOverdue(a)).map(a => {
-                        const overdue = isAppointmentOverdue(a);
-                        const iconVariant = overdue ? "danger" : a.status === "confirmed" ? "success" : a.status === "cancelled" ? "danger" : "warn";
+                    (() => {
+                      const q = apptSearch.toLowerCase().trim();
+                      const filtered = appointments.filter((a) => {
+                        if (hideOverdues && isAppointmentOverdue(a))
+                          return false;
+                        if (apptStatusFilter === "overdue")
+                          return isAppointmentOverdue(a);
+                        if (
+                          apptStatusFilter !== "all" &&
+                          a.status !== apptStatusFilter
+                        )
+                          return false;
+                        if (apptTypeFilter === "in-person" && a.is_telemedicine)
+                          return false;
+                        if (
+                          apptTypeFilter === "telemedicine" &&
+                          !a.is_telemedicine
+                        )
+                          return false;
+                        if (q) {
+                          const doctorMatch = (a.doctor_name || "")
+                            .toLowerCase()
+                            .includes(q);
+                          const reasonMatch = (a.reason || "")
+                            .toLowerCase()
+                            .includes(q);
+                          if (!doctorMatch && !reasonMatch) return false;
+                        }
+                        return true;
+                      });
+                      if (filtered.length === 0) {
                         return (
-                          <div key={a.id} className={`pd-list-card${overdue ? " overdue" : ""}`}>
-                            <div className={`pd-list-icon ${iconVariant}`}>
-                              {overdue ? "⏰" : a.is_telemedicine ? "💻" : "📅"}
-                            </div>
-                            <div className="pd-list-body">
-                              <div className="pd-list-title">
-                                Dr. {a.doctor_name || "Doctor"}
-                                <span className={`pd-chip ${overdue ? "overdue" : a.status === "confirmed" ? "success" : a.status === "pending" ? "warn" : a.status === "cancelled" ? "danger" : "info"}`}>
-                                  {overdue ? "Overdue" : a.status || "Pending"}
-                                </span>
-                                {a.is_telemedicine && <span className="pd-chip info">Telemedicine</span>}
-                              </div>
-                              <div className="pd-list-meta">
-                                {fmtDate(a.appointment_date || "")} · {fmtTime(a.start_time)} – {fmtTime(a.end_time)}
-                              </div>
-                              {a.reason && <div className="pd-list-note">{a.reason}</div>}
-                            </div>
+                          <div className="pd-empty">
+                            <div className="pd-empty-icon">🔍</div>
+                            <p>No appointments match your search or filters.</p>
                           </div>
                         );
-                      })}
-                    </div>
+                      }
+                      return (
+                        <div className="pd-list">
+                          {filtered.map((a) => {
+                            const overdue = isAppointmentOverdue(a);
+                            const iconVariant = overdue
+                              ? "danger"
+                              : a.status === "confirmed"
+                                ? "success"
+                                : a.status === "cancelled"
+                                  ? "danger"
+                                  : "warn";
+                            return (
+                              <div
+                                key={a.id}
+                                className={`pd-list-card${overdue ? " overdue" : ""}`}
+                              >
+                                <div className={`pd-list-icon ${iconVariant}`}>
+                                  {overdue
+                                    ? "⏰"
+                                    : a.is_telemedicine
+                                      ? "💻"
+                                      : "📅"}
+                                </div>
+                                <div className="pd-list-body">
+                                  <div className="pd-list-title">
+                                    Dr. {a.doctor_name || "Doctor"}
+                                    <span
+                                      className={`pd-chip ${overdue ? "overdue" : a.status === "confirmed" ? "success" : a.status === "pending" ? "warn" : a.status === "cancelled" ? "danger" : "info"}`}
+                                    >
+                                      {overdue
+                                        ? "Overdue"
+                                        : a.status || "Pending"}
+                                    </span>
+                                    {a.is_telemedicine && (
+                                      <span className="pd-chip info">
+                                        Telemedicine
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="pd-list-meta">
+                                    {fmtDate(a.appointment_date || "")} ·{" "}
+                                    {fmtTime(a.start_time)} –{" "}
+                                    {fmtTime(a.end_time)}
+                                  </div>
+                                  {a.reason && (
+                                    <div className="pd-list-note">
+                                      {a.reason}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()
                   )}
-                </div>
-                <div className="pd-section">
-                  <BookAppointment hideOverdues={hideOverdues} />
                 </div>
               </>
             )}
@@ -1073,48 +1478,95 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                 <div className="pd-section">
                   <div className="pd-section-header">
                     <div className="pd-section-title">Your Sessions</div>
-                    <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={loadConsultations}>🔄 Refresh</button>
+                    <button
+                      className="pd-btn pd-btn-ghost pd-btn-sm"
+                      onClick={loadConsultations}
+                    >
+                      🔄 Refresh
+                    </button>
                   </div>
                   {consultationsLoading ? (
                     <div className="pd-loading">
-                      <div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/>
-                      <span style={{ marginLeft: 6 }}>Loading consultations…</span>
+                      <div className="pd-loading-dot" />
+                      <div className="pd-loading-dot" />
+                      <div className="pd-loading-dot" />
+                      <span style={{ marginLeft: 6 }}>
+                        Loading consultations…
+                      </span>
                     </div>
                   ) : consultationsError ? (
                     <div className="pd-empty">⚠ {consultationsError}</div>
                   ) : consultations.length === 0 ? (
                     <div className="pd-empty">
                       <div className="pd-empty-icon">💬</div>
-                      <p>No consultations yet. Book a telemedicine appointment.</p>
-                      <button className="pd-btn pd-btn-primary pd-btn-sm" onClick={() => setActiveTab("appointments")}>Book Telemedicine</button>
+                      <p>
+                        No consultations yet. Book a telemedicine appointment.
+                      </p>
+                      <button
+                        className="pd-btn pd-btn-primary pd-btn-sm"
+                        onClick={() => setActiveTab("appointments")}
+                      >
+                        Book Telemedicine
+                      </button>
                     </div>
                   ) : (
                     <div className="pd-list">
-                      {consultations.filter(c => !(hideEndedConsultations && c.status === "ended")).map(c => {
-                        const isActive = c.status === "ongoing" || c.status === "scheduled";
-                        return (
-                          <div key={c.id || c.session_id} className="pd-list-card">
-                            <div className={`pd-list-icon ${c.status === "ongoing" ? "success" : c.status === "ended" ? "danger" : ""}`}>
-                              {c.status === "ongoing" ? "🟢" : c.status === "ended" ? "🔴" : "💬"}
-                            </div>
-                            <div className="pd-list-body">
-                              <div className="pd-list-title">
-                                Session {c.session_id || c.id || ""}
-                                <span className={`pd-chip ${c.status === "ongoing" ? "success" : c.status === "ended" ? "danger" : "info"}`}>
-                                  {c.status || "Scheduled"}
-                                </span>
+                      {consultations
+                        .filter(
+                          (c) =>
+                            !(hideEndedConsultations && c.status === "ended"),
+                        )
+                        .map((c) => {
+                          const isActive =
+                            c.status === "ongoing" || c.status === "scheduled";
+                          return (
+                            <div
+                              key={c.id || c.session_id}
+                              className="pd-list-card"
+                            >
+                              <div
+                                className={`pd-list-icon ${c.status === "ongoing" ? "success" : c.status === "ended" ? "danger" : ""}`}
+                              >
+                                {c.status === "ongoing"
+                                  ? "🟢"
+                                  : c.status === "ended"
+                                    ? "🔴"
+                                    : "💬"}
                               </div>
-                              <div className="pd-list-meta">Appointment #{c.appointment_id || c.appointmentId || ""}</div>
-                              {c.meeting_room && <div className="pd-list-note">Room: {c.meeting_room}</div>}
-                              {isActive && (
-                                <div className="pd-list-actions">
-                                  <button className="pd-btn pd-btn-success pd-btn-sm" onClick={() => setActiveTab("appointments")}>▶ Join Session</button>
+                              <div className="pd-list-body">
+                                <div className="pd-list-title">
+                                  Session {c.session_id || c.id || ""}
+                                  <span
+                                    className={`pd-chip ${c.status === "ongoing" ? "success" : c.status === "ended" ? "danger" : "info"}`}
+                                  >
+                                    {c.status || "Scheduled"}
+                                  </span>
                                 </div>
-                              )}
+                                <div className="pd-list-meta">
+                                  Appointment #
+                                  {c.appointment_id || c.appointmentId || ""}
+                                </div>
+                                {c.meeting_room && (
+                                  <div className="pd-list-note">
+                                    Room: {c.meeting_room}
+                                  </div>
+                                )}
+                                {isActive && (
+                                  <div className="pd-list-actions">
+                                    <button
+                                      className="pd-btn pd-btn-success pd-btn-sm"
+                                      onClick={() =>
+                                        setActiveTab("appointments")
+                                      }
+                                    >
+                                      ▶ Join Session
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
                     </div>
                   )}
                 </div>
@@ -1126,45 +1578,25 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               <>
                 <div className="pd-page-head">
                   <h2>💊 Prescriptions</h2>
-                  <p>Prescriptions issued by your doctor after confirmed appointments.</p>
+                  <p>
+                    Prescriptions issued by your doctor after confirmed
+                    appointments.
+                  </p>
                 </div>
                 <div className="pd-section">
                   <div className="pd-section-header">
                     <div className="pd-section-title">All Prescriptions</div>
-                    <button className="pd-btn pd-btn-ghost pd-btn-sm" onClick={loadPrescriptions}>🔄 Refresh</button>
+                    <span style={{ fontSize: 12, color: "#7a8fa6" }}>
+                      {prescriptions.length > 0 &&
+                        `${prescriptions.length} total`}
+                    </span>
                   </div>
-                  {prescriptionsLoading ? (
-                    <div className="pd-loading">
-                      <div className="pd-loading-dot"/><div className="pd-loading-dot"/><div className="pd-loading-dot"/>
-                      <span style={{ marginLeft: 6 }}>Loading prescriptions…</span>
-                    </div>
-                  ) : prescriptionsError ? (
-                    <div className="pd-empty">⚠ {prescriptionsError}</div>
-                  ) : prescriptions.length === 0 ? (
-                    <div className="pd-empty">
-                      <div className="pd-empty-icon">💊</div>
-                      <p>No prescriptions yet.</p>
-                    </div>
-                  ) : (
-                    <div className="pd-list">
-                      {prescriptions.map(p => (
-                        <div key={p.id} className="pd-list-card">
-                          <div className="pd-list-icon success">💊</div>
-                          <div className="pd-list-body">
-                            <div className="pd-list-title">
-                              {p.doctor_name ? `Dr. ${p.doctor_name}` : "Prescription"}
-                              <span className="pd-chip success">Issued</span>
-                            </div>
-                            <div className="pd-list-meta">{fmtDate(p.appointment_date || p.createdAt)}</div>
-                            {p.diagnosis && <div className="pd-list-note">Diagnosis: {p.diagnosis}</div>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="pd-section">
-                  <PatientPrescriptions />
+                  <PatientPrescriptions
+                    data={prescriptions}
+                    loading={prescriptionsLoading}
+                    error={prescriptionsError}
+                    onRefresh={loadPrescriptions}
+                  />
                 </div>
               </>
             )}
@@ -1187,10 +1619,17 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                       <div className="pd-settings-option-icon">✏️</div>
                       <div className="pd-settings-content">
                         <div className="pd-settings-label">Edit Profile</div>
-                        <div className="pd-settings-description">Update your name, phone and personal details.</div>
+                        <div className="pd-settings-description">
+                          Update your name, phone and personal details.
+                        </div>
                       </div>
                       <div className="pd-settings-controls">
-                        <button className="pd-btn pd-btn-primary pd-btn-sm" onClick={() => setShowProfile(true)}>Edit Profile</button>
+                        <button
+                          className="pd-btn pd-btn-primary pd-btn-sm"
+                          onClick={() => setShowProfile(true)}
+                        >
+                          Edit Profile
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1199,15 +1638,21 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                 {/* Display preferences */}
                 <div className="pd-section">
                   <div className="pd-section-header">
-                    <div className="pd-section-title">🖥 Display Preferences</div>
+                    <div className="pd-section-title">
+                      🖥 Display Preferences
+                    </div>
                   </div>
                   <div className="pd-settings-stack">
                     <div className="pd-settings-option">
                       <div className="pd-settings-option-icon">⏰</div>
                       <div className="pd-settings-content">
-                        <div className="pd-settings-label">Hide Overdue Appointments</div>
+                        <div className="pd-settings-label">
+                          Hide Overdue Appointments
+                        </div>
                         <div className="pd-settings-description">
-                          {hideOverdues ? "Overdue appointments are currently hidden." : "Overdue appointments are shown with a warning."}
+                          {hideOverdues
+                            ? "Overdue appointments are currently hidden."
+                            : "Overdue appointments are shown with a warning."}
                         </div>
                       </div>
                       <div className="pd-settings-controls">
@@ -1216,15 +1661,23 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                             className="pd-settings-help-icon"
                             onMouseEnter={() => setShowOverdueTooltip(true)}
                             onMouseLeave={() => setShowOverdueTooltip(false)}
-                          >?</div>
+                          >
+                            ?
+                          </div>
                           {showOverdueTooltip && (
                             <div className="pd-settings-tooltip">
-                              Hide appointments that have passed their date but aren't marked complete or cancelled.
+                              Hide appointments that have passed their date but
+                              aren't marked complete or cancelled.
                             </div>
                           )}
                         </div>
-                        <div className="pd-toggle-wrap" onClick={() => setHideOverdues(!hideOverdues)}>
-                          <div className={`pd-toggle-switch${hideOverdues ? " active" : ""}`}>
+                        <div
+                          className="pd-toggle-wrap"
+                          onClick={() => setHideOverdues(!hideOverdues)}
+                        >
+                          <div
+                            className={`pd-toggle-switch${hideOverdues ? " active" : ""}`}
+                          >
                             <div className="pd-toggle-circle" />
                           </div>
                         </div>
@@ -1234,30 +1687,49 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                     <div className="pd-settings-option">
                       <div className="pd-settings-option-icon">🔴</div>
                       <div className="pd-settings-content">
-                        <div className="pd-settings-label">Hide Ended Consultations</div>
+                        <div className="pd-settings-label">
+                          Hide Ended Consultations
+                        </div>
                         <div className="pd-settings-description">
-                          {hideEndedConsultations ? "Ended consultations are currently hidden." : "Ended consultations are shown in your list."}
+                          {hideEndedConsultations
+                            ? "Ended consultations are currently hidden."
+                            : "Ended consultations are shown in your list."}
                         </div>
                       </div>
                       <div className="pd-settings-controls">
                         <div className="pd-settings-tooltip-wrapper">
                           <div
                             className="pd-settings-help-icon"
-                            onMouseEnter={() => setShowEndedConsultTooltip(true)}
-                            onMouseLeave={() => setShowEndedConsultTooltip(false)}
-                          >?</div>
+                            onMouseEnter={() =>
+                              setShowEndedConsultTooltip(true)
+                            }
+                            onMouseLeave={() =>
+                              setShowEndedConsultTooltip(false)
+                            }
+                          >
+                            ?
+                          </div>
                           {showEndedConsultTooltip && (
                             <div className="pd-settings-tooltip">
-                              Hide consultations that have already ended from the Consultations tab.
+                              Hide consultations that have already ended from
+                              the Consultations tab.
                             </div>
                           )}
                         </div>
-                        <div className="pd-toggle-wrap" onClick={() => {
-                          const next = !hideEndedConsultations;
-                          setHideEndedConsultations(next);
-                          localStorage.setItem("patientHideEndedConsultations", JSON.stringify(next));
-                        }}>
-                          <div className={`pd-toggle-switch${hideEndedConsultations ? " active" : ""}`}>
+                        <div
+                          className="pd-toggle-wrap"
+                          onClick={() => {
+                            const next = !hideEndedConsultations;
+                            setHideEndedConsultations(next);
+                            localStorage.setItem(
+                              "patientHideEndedConsultations",
+                              JSON.stringify(next),
+                            );
+                          }}
+                        >
+                          <div
+                            className={`pd-toggle-switch${hideEndedConsultations ? " active" : ""}`}
+                          >
                             <div className="pd-toggle-circle" />
                           </div>
                         </div>
@@ -1267,7 +1739,6 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
                 </div>
               </>
             )}
-
           </div>
         </div>
       </div>
@@ -1286,4 +1757,3 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
 };
 
 export default PatientDashboard;
-

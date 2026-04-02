@@ -87,6 +87,10 @@ export default function MedicalRecords() {
   const [deletingId, setDeletingId] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
 
+  // Search & filter
+  const [mrSearch, setMrSearch] = useState("");
+  const [mrCategoryFilter, setMrCategoryFilter] = useState("all");
+
   useEffect(() => {
     let cancelled = false;
     getMyMedicalRecords().then((res) => {
@@ -366,6 +370,60 @@ export default function MedicalRecords() {
         .mr-empty-hint { font-size: 13px; color: #7a8fa6; max-width: 300px; margin: 0 auto 18px; }
         .mr-loading { text-align: center; padding: 48px; color: #7a8fa6; font-size: 14px; }
         .mr-global-err { padding: 12px 16px; background: #fee2e2; color: #991b1b; border-radius: 9px; margin-bottom: 18px; font-size: 13px; }
+
+        /* ── Search / filter toolbar ── */
+        .mr-toolbar {
+          display: flex; gap: 8px; flex-wrap: wrap;
+          margin-bottom: 18px;
+        }
+        .mr-search-wrap {
+          position: relative; flex: 1; min-width: 200px;
+        }
+        .mr-search-icon {
+          position: absolute; left: 10px; top: 50%;
+          transform: translateY(-50%);
+          font-size: 13px; pointer-events: none; line-height: 1;
+        }
+        .mr-search-input {
+          width: 100%; padding: 8px 32px 8px 30px;
+          border: 1.5px solid #d9e5f0; border-radius: 8px;
+          font-family: 'DM Sans', sans-serif; font-size: 13px;
+          color: #1a3552; background: #f7fafc; outline: none;
+          box-sizing: border-box; transition: border-color .18s, box-shadow .18s;
+        }
+        .mr-search-input:focus {
+          border-color: #1a6fa0;
+          box-shadow: 0 0 0 3px rgba(26,111,160,.1);
+          background: #fff;
+        }
+        .mr-search-clear {
+          position: absolute; right: 8px; top: 50%;
+          transform: translateY(-50%);
+          background: none; border: none; cursor: pointer;
+          font-size: 12px; color: #7a8fa6; padding: 2px 4px; line-height: 1;
+        }
+        .mr-search-clear:hover { color: #dc2626; }
+        .mr-filter-select {
+          padding: 8px 10px;
+          border: 1.5px solid #d9e5f0; border-radius: 8px;
+          font-family: 'DM Sans', sans-serif; font-size: 13px;
+          color: #1a3552; background: #f7fafc;
+          outline: none; cursor: pointer;
+          transition: border-color .18s;
+        }
+        .mr-filter-select:focus { border-color: #1a6fa0; }
+        .mr-toolbar-clear {
+          padding: 8px 12px; border: 1.5px solid #e4eaf0;
+          border-radius: 8px; background: #f0f4f8;
+          font-family: 'DM Sans', sans-serif; font-size: 12px;
+          font-weight: 600; color: #1a6fa0; cursor: pointer;
+        }
+        .mr-no-results {
+          background: #fff; border: 1.5px dashed #d9e5f0;
+          border-radius: 14px; padding: 48px 20px; text-align: center;
+        }
+        .mr-no-results-icon { font-size: 40px; opacity: .35; margin-bottom: 10px; }
+        .mr-no-results-text { font-size: 13px; color: #7a8fa6; }
       `}</style>
 
       <div className="mr-root">
@@ -402,97 +460,176 @@ export default function MedicalRecords() {
             </button>
           </div>
         ) : (
-          <div className="mr-grid">
-            {records.map((rec) => {
-              const cat = getCat(rec.category);
-              const isDeleting = deletingId === rec.id;
-              const isConfirming = confirmId === rec.id;
-
-              return (
-                <div className="mr-card" key={rec.id}>
-                  <div
-                    className="mr-card-banner"
-                    style={{ background: cat.border }}
-                  />
-                  <div className="mr-card-body">
-                    <div
-                      className="mr-card-cat"
-                      style={{
-                        background: cat.color,
-                        color: cat.text,
-                        borderColor: cat.border,
+          (() => {
+            const q = mrSearch.toLowerCase().trim();
+            const filtered = records.filter((rec) => {
+              if (
+                mrCategoryFilter !== "all" &&
+                rec.category !== mrCategoryFilter
+              )
+                return false;
+              if (q) {
+                const titleMatch = (rec.title || "").toLowerCase().includes(q);
+                const descMatch = (rec.description || "")
+                  .toLowerCase()
+                  .includes(q);
+                if (!titleMatch && !descMatch) return false;
+              }
+              return true;
+            });
+            return (
+              <>
+                {/* Search & filter toolbar */}
+                <div className="mr-toolbar">
+                  <div className="mr-search-wrap">
+                    <span className="mr-search-icon">🔍</span>
+                    <input
+                      type="text"
+                      className="mr-search-input"
+                      placeholder="Search by title or description…"
+                      value={mrSearch}
+                      onChange={(e) => setMrSearch(e.target.value)}
+                    />
+                    {mrSearch && (
+                      <button
+                        className="mr-search-clear"
+                        onClick={() => setMrSearch("")}
+                        aria-label="Clear search"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    className="mr-filter-select"
+                    value={mrCategoryFilter}
+                    onChange={(e) => setMrCategoryFilter(e.target.value)}
+                  >
+                    <option value="all">All Categories</option>
+                    {CATEGORIES.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.icon} {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  {(mrSearch || mrCategoryFilter !== "all") && (
+                    <button
+                      className="mr-toolbar-clear"
+                      onClick={() => {
+                        setMrSearch("");
+                        setMrCategoryFilter("all");
                       }}
                     >
-                      <span>{cat.icon}</span>
-                      {cat.label}
-                    </div>
-                    <div className="mr-card-title" title={rec.title}>
-                      {rec.title}
-                    </div>
-                    {rec.description && (
-                      <div className="mr-card-desc">{rec.description}</div>
-                    )}
-                    <div className="mr-card-meta">
-                      <span>📅 {formatDate(rec.uploaded_at)}</span>
-                      <span>💾 {formatBytes(rec.file_size)}</span>
-                      <span
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          maxWidth: 140,
-                        }}
-                        title={rec.file_name}
-                      >
-                        📄 {rec.file_name}
-                      </span>
-                    </div>
-                  </div>
-
-                  {!isConfirming && (
-                    <div className="mr-card-footer">
-                      <a
-                        className="mr-view-btn"
-                        href={getFileUrl(rec.file_url)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        👁 View / Download
-                      </a>
-                      <button
-                        className="mr-del-btn"
-                        disabled={isDeleting}
-                        onClick={() => setConfirmId(rec.id)}
-                      >
-                        {isDeleting ? "…" : "🗑"}
-                      </button>
-                    </div>
-                  )}
-
-                  {isConfirming && (
-                    <div className="mr-confirm-panel">
-                      <strong>Delete this record?</strong>
-                      <div className="mr-confirm-btns">
-                        <button
-                          className="mr-confirm-yes"
-                          disabled={isDeleting}
-                          onClick={() => handleDelete(rec.id)}
-                        >
-                          {isDeleting ? "Deleting…" : "Yes, delete"}
-                        </button>
-                        <button
-                          className="mr-confirm-no"
-                          onClick={() => setConfirmId(null)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
+                      ✕ Clear
+                    </button>
                   )}
                 </div>
-              );
-            })}
-          </div>
+
+                {filtered.length === 0 ? (
+                  <div className="mr-no-results">
+                    <div className="mr-no-results-icon">🔍</div>
+                    <div className="mr-no-results-text">
+                      No records match your search or filter.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mr-grid">
+                    {filtered.map((rec) => {
+                      const cat = getCat(rec.category);
+                      const isDeleting = deletingId === rec.id;
+                      const isConfirming = confirmId === rec.id;
+
+                      return (
+                        <div className="mr-card" key={rec.id}>
+                          <div
+                            className="mr-card-banner"
+                            style={{ background: cat.border }}
+                          />
+                          <div className="mr-card-body">
+                            <div
+                              className="mr-card-cat"
+                              style={{
+                                background: cat.color,
+                                color: cat.text,
+                                borderColor: cat.border,
+                              }}
+                            >
+                              <span>{cat.icon}</span>
+                              {cat.label}
+                            </div>
+                            <div className="mr-card-title" title={rec.title}>
+                              {rec.title}
+                            </div>
+                            {rec.description && (
+                              <div className="mr-card-desc">
+                                {rec.description}
+                              </div>
+                            )}
+                            <div className="mr-card-meta">
+                              <span>📅 {formatDate(rec.uploaded_at)}</span>
+                              <span>💾 {formatBytes(rec.file_size)}</span>
+                              <span
+                                style={{
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  maxWidth: 140,
+                                }}
+                                title={rec.file_name}
+                              >
+                                📄 {rec.file_name}
+                              </span>
+                            </div>
+                          </div>
+
+                          {!isConfirming && (
+                            <div className="mr-card-footer">
+                              <a
+                                className="mr-view-btn"
+                                href={getFileUrl(rec.file_url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                👁 View / Download
+                              </a>
+                              <button
+                                className="mr-del-btn"
+                                disabled={isDeleting}
+                                onClick={() => setConfirmId(rec.id)}
+                              >
+                                {isDeleting ? "…" : "🗑"}
+                              </button>
+                            </div>
+                          )}
+
+                          {isConfirming && (
+                            <div className="mr-confirm-panel">
+                              <strong>Delete this record?</strong>
+                              <div className="mr-confirm-btns">
+                                <button
+                                  className="mr-confirm-yes"
+                                  disabled={isDeleting}
+                                  onClick={() => handleDelete(rec.id)}
+                                >
+                                  {isDeleting ? "Deleting…" : "Yes, delete"}
+                                </button>
+                                <button
+                                  className="mr-confirm-no"
+                                  onClick={() => setConfirmId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()
         )}
       </div>
 
