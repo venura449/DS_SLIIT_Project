@@ -61,6 +61,7 @@ const isAppointmentOverdue = (appointment) => {
 const PatientDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showProfile, setShowProfile] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState(initialUser);
   const [appointments, setAppointments] = useState([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
@@ -461,11 +462,82 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         .pd-toggle-overdue-switch.active { background: #86efac; border-color: #4ade80; }
         .pd-toggle-overdue-circle { width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: all .15s; }
         .pd-toggle-overdue-switch.active .pd-toggle-overdue-circle { transform: translateX(18px); }
+
+        /* ── Hamburger button (hidden on desktop) ── */
+        .pd-menu-btn {
+          display: none;
+          align-items: center;
+          justify-content: center;
+          width: 34px; height: 34px;
+          background: none;
+          border: 1.5px solid #e4eaf0;
+          border-radius: 7px;
+          cursor: pointer;
+          font-size: 17px;
+          color: #0a3d62;
+          flex-shrink: 0;
+          transition: background 0.15s;
+        }
+        .pd-menu-btn:hover { background: #f0f4f8; }
+
+        /* ── Sidebar drawer backdrop (hidden on desktop) ── */
+        .pd-sidebar-backdrop { display: none; }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+          .pd-sidebar {
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+            z-index: 200;
+          }
+          .pd-sidebar.open {
+            transform: translateX(0);
+            box-shadow: 6px 0 24px rgba(0,0,0,0.22);
+          }
+          .pd-sidebar-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.38);
+            z-index: 150;
+          }
+          .pd-main { margin-left: 0; }
+          .pd-menu-btn { display: flex; }
+          .pd-topbar { padding: 0 14px; gap: 8px; }
+          .pd-topbar-right { gap: 8px; }
+          .pd-topbar-username { display: none; }
+          .pd-content { padding: 14px 12px; }
+          .pd-stats { grid-template-columns: 1fr 1fr; }
+          .pd-section { padding: 16px 14px; }
+          .pd-section-header { flex-wrap: wrap; gap: 8px; }
+          .pd-actions { gap: 8px; }
+          .pd-btn { padding: 7px 13px; font-size: 12.5px; }
+          .pd-page-head h2 { font-size: 17px; }
+          .pd-settings-option { flex-direction: column; align-items: flex-start; gap: 12px; }
+          .pd-settings-controls { width: 100%; justify-content: flex-end; }
+          .pd-settings-tooltip { left: unset; right: 0; }
+          .pd-settings-tooltip::after { left: unset; right: 14px; }
+        }
+
+        @media (max-width: 420px) {
+          .pd-stats { grid-template-columns: 1fr; }
+          .pd-topbar { height: 48px; }
+          .pd-stat-value { font-size: 22px; }
+          .pd-list-card { padding: 10px 11px; }
+        }
       `}</style>
 
       <div className="pd-root">
+        {/* Mobile backdrop */}
+        {sidebarOpen && (
+          <div
+            className="pd-sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <aside className="pd-sidebar">
+        <aside className={`pd-sidebar${sidebarOpen ? " open" : ""}`}>
           <div className="pd-brand">
             <div className="pd-brand-row">
               <div className="pd-brand-icon">
@@ -493,7 +565,10 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               <button
                 key={item.id}
                 className={`pd-nav-btn${activeTab === item.id ? " active" : ""}`}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setSidebarOpen(false);
+                }}
               >
                 <span className="ni">{item.icon}</span>
                 {item.label}
@@ -518,7 +593,16 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
         {/* Main area */}
         <div className="pd-main">
           <header className="pd-topbar">
-            <span className="pd-topbar-title">{pageTitles[activeTab]}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                className="pd-menu-btn"
+                onClick={() => setSidebarOpen((v) => !v)}
+                aria-label="Toggle menu"
+              >
+                ☰
+              </button>
+              <span className="pd-topbar-title">{pageTitles[activeTab]}</span>
+            </div>
             <div className="pd-topbar-right">
               <NotificationBell userId={user?.id} />
               <button
@@ -528,7 +612,9 @@ const PatientDashboard = ({ user: initialUser, onLogout }) => {
               >
                 👤
               </button>
-              <span>{user?.name || "Patient"}</span>
+              <span className="pd-topbar-username">
+                {user?.name || "Patient"}
+              </span>
             </div>
           </header>
 
