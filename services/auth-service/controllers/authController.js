@@ -1,5 +1,6 @@
 
 const User = require('../models/User');
+const AuditLog = require('../models/AuditLog');
 const { generateTokens, verifyAccessToken, verifyRefreshToken } = require('../services/jwtService');
 const { sendAuthEvent } = require('../config/kafka');
 
@@ -111,6 +112,20 @@ const login = async (req, res) => {
             loginTime: new Date(),
         });
 
+        // Audit log
+        const rawLoginIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+        const loginIp = rawLoginIp.startsWith('::ffff:') ? rawLoginIp.slice(7) : rawLoginIp;
+        AuditLog.create({
+            actorId: user.id,
+            actorEmail: user.email,
+            actorName: user.name,
+            action: 'USER_LOGIN',
+            resourceType: 'user',
+            resourceId: user.id,
+            details: { userType: user.user_type },
+            ipAddress: loginIp,
+        }).catch((e) => console.error('[AuditLog] login log error:', e.message));
+
         res.status(200).json({
             success: true,
             message: 'Login successful',
@@ -186,6 +201,20 @@ const logout = async (req, res) => {
             accessToken: accessToken.substring(0, 20) + '...',
             refreshToken: refreshToken.substring(0, 20) + '...',
         });
+
+        // Audit log
+        const rawLogoutIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+        const logoutIp = rawLogoutIp.startsWith('::ffff:') ? rawLogoutIp.slice(7) : rawLogoutIp;
+        AuditLog.create({
+            actorId: user.id,
+            actorEmail: user.email,
+            actorName: user.name,
+            action: 'USER_LOGOUT',
+            resourceType: 'user',
+            resourceId: user.id,
+            details: { userType: user.user_type },
+            ipAddress: logoutIp,
+        }).catch((e) => console.error('[AuditLog] logout log error:', e.message));
 
         res.status(200).json({
             success: true,
