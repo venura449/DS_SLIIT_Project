@@ -26,3 +26,28 @@ export const createPayment = async (slotId, amount) => {
     return { success: false, error: e.message };
   }
 };
+
+/**
+ * Fetch doctor revenue grouped by period.
+ * @param {string[]} slotIds - slot IDs from the doctor's appointments
+ * @param {'daily'|'weekly'|'monthly'} period
+ */
+export const getDoctorRevenue = async (slotIds, period = "monthly") => {
+  try {
+    if (!slotIds || slotIds.length === 0)
+      return { success: true, data: [] };
+
+    const params = new URLSearchParams({
+      slotIds: slotIds.join(","),
+      period,
+    });
+    const res = await authenticatedFetch(
+      `${PAYMENT_API}/doctor/revenue?${params}`
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to fetch revenue");
+    return { success: true, data: data.data || [] };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+};
