@@ -7,7 +7,7 @@ const transport = pino.transport({
     target: 'pino-roll',
     options:{
         file:path.join(logDirectory, 'audit.json'),
-        size: '1K',
+        size: '10M',
         frequency: 'daily',
         mkdir:true,
         extension:'json',
