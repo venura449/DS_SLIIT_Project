@@ -59,6 +59,8 @@ services:
     depends_on:
       - postgres-auth
       - kafka
+    volumes:
+      - ./logs:/app/logs
     networks:
       - healthcare-network
 

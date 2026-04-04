@@ -1,8 +1,12 @@
-
-const User = require('../models/User');
-const AuditLog = require('../models/AuditLog');
-const { generateTokens, verifyAccessToken, verifyRefreshToken } = require('../services/jwtService');
-const { sendAuthEvent } = require('../config/kafka');
+const User = require("../models/User");
+const AuditLog = require("../models/AuditLog");
+const {
+    generateTokens,
+    verifyAccessToken,
+    verifyRefreshToken,
+} = require("../services/jwtService");
+const { sendAuthEvent } = require("../config/kafka");
+const { logAuditEvent } = require("../services/auditLogService");
 
 const register = async (req, res) => {
     try {
@@ -12,7 +16,7 @@ const register = async (req, res) => {
         if (!email || !password || !name) {
             return res.status(400).json({
                 success: false,
-                message: 'Please provide email, password, and name',
+                message: "Please provide email, password, and name",
             });
         }
 
@@ -21,7 +25,7 @@ const register = async (req, res) => {
         if (existingUser) {
             return res.status(409).json({
                 success: false,
-                message: 'User with this email already exists',
+                message: "User with this email already exists",
             });
         }
 
@@ -31,14 +35,18 @@ const register = async (req, res) => {
             password,
             name,
             phone,
-            userType: userType || 'patient',
+            userType: userType || "patient",
         });
 
         // Generate tokens
-        const { accessToken, refreshToken } = generateTokens(newUser.id, newUser.email, newUser.user_type);
+        const { accessToken, refreshToken } = generateTokens(
+            newUser.id,
+            newUser.email,
+            newUser.user_type,
+        );
 
         // Send Kafka event
-        await sendAuthEvent('USER_REGISTERED', {
+        await sendAuthEvent("USER_REGISTERED", {
             userId: newUser.id,
             email: newUser.email,
             name: newUser.name,
@@ -49,7 +57,7 @@ const register = async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'User registered successfully',
+            message: "User registered successfully",
             data: {
                 user: {
                     id: newUser.id,
@@ -62,11 +70,23 @@ const register = async (req, res) => {
                 refreshToken,
             },
         });
+
+        await logAuditEvent(req, {
+            action: 'USER_REGISTERED',
+            resourceType: 'user',
+            resourceId: newUser.id,
+            details: {
+                userId: newUser.id,
+                email: newUser.email,
+                name: newUser.name
+            }
+        });
+
     } catch (error) {
-        console.error('Registration error:', error);
+        console.error("Registration error:", error);
         res.status(500).json({
             success: false,
-            message: 'Registration failed',
+            message: "Registration failed",
             error: error.message,
         });
     }
@@ -80,7 +100,7 @@ const login = async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({
                 success: false,
-                message: 'Please provide email and password',
+                message: "Please provide email and password",
             });
         }
 
@@ -89,7 +109,7 @@ const login = async (req, res) => {
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid email or password',
+                message: "Invalid email or password",
             });
         }
 
@@ -98,37 +118,57 @@ const login = async (req, res) => {
         if (!isPasswordValid) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid email or password',
+                message: "Invalid email or password",
             });
         }
 
         // Generate tokens
-        const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.user_type);
+        const { accessToken, refreshToken } = generateTokens(
+            user.id,
+            user.email,
+            user.user_type,
+        );
 
         // Send Kafka event
-        await sendAuthEvent('USER_LOGIN', {
+        await sendAuthEvent("USER_LOGIN", {
             userId: user.id,
             email: user.email,
             loginTime: new Date(),
         });
 
         // Audit log
-        const rawLoginIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
-        const loginIp = rawLoginIp.startsWith('::ffff:') ? rawLoginIp.slice(7) : rawLoginIp;
+        const rawLoginIp =
+            req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
+            req.socket?.remoteAddress ||
+            "unknown";
+        const loginIp = rawLoginIp.startsWith("::ffff:")
+            ? rawLoginIp.slice(7)
+            : rawLoginIp;
         AuditLog.create({
             actorId: user.id,
             actorEmail: user.email,
             actorName: user.name,
-            action: 'USER_LOGIN',
-            resourceType: 'user',
+            action: "USER_LOGIN",
+            resourceType: "user",
             resourceId: user.id,
             details: { userType: user.user_type },
             ipAddress: loginIp,
-        }).catch((e) => console.error('[AuditLog] login log error:', e.message));
+        }).catch((e) => console.error("[AuditLog] login log error:", e.message));
+
+        await logAuditEvent(req, {
+            action: "USER_LOGIN",
+            resourceType: "user",
+            resourceId: user.id,
+            details: {
+                userId: user.id,
+                email: user.email,
+                userType: user.user_type,
+            },
+        });
 
         res.status(200).json({
             success: true,
-            message: 'Login successful',
+            message: "Login successful",
             data: {
                 user: {
                     id: user.id,
@@ -142,10 +182,10 @@ const login = async (req, res) => {
             },
         });
     } catch (error) {
-        console.error('Login error:', error);
+        console.error("Login error:", error);
         res.status(500).json({
             success: false,
-            message: 'Login failed',
+            message: "Login failed",
             error: error.message,
         });
     }
@@ -157,17 +197,17 @@ const logout = async (req, res) => {
         const authHeader = req.headers.authorization;
 
         // Validate inputs
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return res.status(401).json({
                 success: false,
-                message: 'No access token provided',
+                message: "No access token provided",
             });
         }
 
         if (!refreshToken) {
             return res.status(400).json({
                 success: false,
-                message: 'Refresh token is required for logout',
+                message: "Refresh token is required for logout",
             });
         }
 
@@ -176,11 +216,10 @@ const logout = async (req, res) => {
         const decodedAccess = verifyAccessToken(accessToken);
         const decodedRefresh = verifyRefreshToken(refreshToken);
 
-
         if (decodedAccess.userId !== decodedRefresh.userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Token mismatch: tokens do not belong to the same user',
+                message: "Token mismatch: tokens do not belong to the same user",
             });
         }
 
@@ -189,46 +228,61 @@ const logout = async (req, res) => {
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: 'User not found',
+                message: "User not found",
             });
         }
 
-
-        await sendAuthEvent('USER_LOGOUT', {
+        await sendAuthEvent("USER_LOGOUT", {
             userId: user.id,
             email: user.email,
             logoutTime: new Date(),
-            accessToken: accessToken.substring(0, 20) + '...',
-            refreshToken: refreshToken.substring(0, 20) + '...',
+            accessToken: accessToken.substring(0, 20) + "...",
+            refreshToken: refreshToken.substring(0, 20) + "...",
         });
 
         // Audit log
-        const rawLogoutIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
-        const logoutIp = rawLogoutIp.startsWith('::ffff:') ? rawLogoutIp.slice(7) : rawLogoutIp;
+        const rawLogoutIp =
+            req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
+            req.socket?.remoteAddress ||
+            "unknown";
+        const logoutIp = rawLogoutIp.startsWith("::ffff:")
+            ? rawLogoutIp.slice(7)
+            : rawLogoutIp;
         AuditLog.create({
             actorId: user.id,
             actorEmail: user.email,
             actorName: user.name,
-            action: 'USER_LOGOUT',
-            resourceType: 'user',
+            action: "USER_LOGOUT",
+            resourceType: "user",
             resourceId: user.id,
             details: { userType: user.user_type },
             ipAddress: logoutIp,
-        }).catch((e) => console.error('[AuditLog] logout log error:', e.message));
+        }).catch((e) => console.error("[AuditLog] logout log error:", e.message));
 
         res.status(200).json({
             success: true,
-            message: 'Logout successful',
+            message: "Logout successful",
             data: {
                 userId: user.id,
                 email: user.email,
             },
         });
+
+        await logAuditEvent(req, {
+            action: 'USER_LOGOUT',
+            resourceType: 'user',
+            resourceId: user.id,
+            details: {
+                userId: user.id,
+                email: user.email
+            }
+        });
+
     } catch (error) {
-        console.error('Logout error:', error);
+        console.error("Logout error:", error);
         res.status(401).json({
             success: false,
-            message: 'Logout failed',
+            message: "Logout failed",
             error: error.message,
         });
     }
@@ -241,38 +295,39 @@ const refreshToken = async (req, res) => {
         if (!refreshToken) {
             return res.status(400).json({
                 success: false,
-                message: 'Refresh token is required',
+                message: "Refresh token is required",
             });
         }
 
-
         const decoded = verifyRefreshToken(refreshToken);
-
 
         const user = await User.findById(decoded.userId);
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: 'User not found',
+                message: "User not found",
             });
         }
 
-
-        const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.email, user.user_type);
+        const { accessToken, refreshToken: newRefreshToken } = generateTokens(
+            user.id,
+            user.email,
+            user.user_type,
+        );
 
         res.status(200).json({
             success: true,
-            message: 'Token refreshed successfully',
+            message: "Token refreshed successfully",
             data: {
                 accessToken,
                 refreshToken: newRefreshToken,
             },
         });
     } catch (error) {
-        console.error('Token refresh error:', error);
+        console.error("Token refresh error:", error);
         res.status(401).json({
             success: false,
-            message: 'Token refresh failed',
+            message: "Token refresh failed",
             error: error.message,
         });
     }
@@ -281,10 +336,10 @@ const refreshToken = async (req, res) => {
 const verifyToken = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return res.status(401).json({
                 success: false,
-                message: 'No token provided',
+                message: "No token provided",
             });
         }
 
@@ -296,20 +351,20 @@ const verifyToken = async (req, res) => {
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: 'User not found',
+                message: "User not found",
             });
         }
 
         res.status(200).json({
             success: true,
-            message: 'Token is valid',
+            message: "Token is valid",
             data: { user },
         });
     } catch (error) {
-        console.error('Token verification error:', error);
+        console.error("Token verification error:", error);
         res.status(401).json({
             success: false,
-            message: 'Token verification failed',
+            message: "Token verification failed",
             error: error.message,
         });
     }
@@ -318,10 +373,10 @@ const verifyToken = async (req, res) => {
 const updateProfile = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return res.status(401).json({
                 success: false,
-                message: 'No token provided',
+                message: "No token provided",
             });
         }
 
@@ -329,15 +384,15 @@ const updateProfile = async (req, res) => {
         const decoded = verifyAccessToken(token);
 
         // Get full user data including password for verification
-        const db = require('../config/postgres');
-        const userQuery = 'SELECT * FROM users WHERE id = $1';
+        const db = require("../config/postgres");
+        const userQuery = "SELECT * FROM users WHERE id = $1";
         const userResult = await db.query(userQuery, [decoded.userId]);
         const userWithPassword = userResult.rows[0];
 
         if (!userWithPassword) {
             return res.status(401).json({
                 success: false,
-                message: 'User not found',
+                message: "User not found",
             });
         }
 
@@ -347,16 +402,19 @@ const updateProfile = async (req, res) => {
         if (!name || !phone || !password) {
             return res.status(400).json({
                 success: false,
-                message: 'Name, phone, and password are required',
+                message: "Name, phone, and password are required",
             });
         }
 
         // Verify password
-        const isPasswordValid = await User.verifyPassword(password, userWithPassword.password);
+        const isPasswordValid = await User.verifyPassword(
+            password,
+            userWithPassword.password,
+        );
         if (!isPasswordValid) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid password. Please try again.',
+                message: "Invalid password. Please try again.",
             });
         }
 
@@ -369,11 +427,11 @@ const updateProfile = async (req, res) => {
             address,
             emergency_contact,
             weight,
-            gender
+            gender,
         });
 
         // Send Kafka event
-        await sendAuthEvent('USER_PROFILE_UPDATED', {
+        await sendAuthEvent("USER_PROFILE_UPDATED", {
             userId: updatedUser.id,
             email: updatedUser.email,
             name: updatedUser.name,
@@ -388,7 +446,7 @@ const updateProfile = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: 'Profile updated successfully',
+            message: "Profile updated successfully",
             data: {
                 user: {
                     id: updatedUser.id,
@@ -405,10 +463,10 @@ const updateProfile = async (req, res) => {
             },
         });
     } catch (error) {
-        console.error('Profile update error:', error);
+        console.error("Profile update error:", error);
         res.status(500).json({
             success: false,
-            message: 'Profile update failed',
+            message: "Profile update failed",
             error: error.message,
         });
     }
