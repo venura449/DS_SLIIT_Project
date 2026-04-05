@@ -83,7 +83,7 @@ class Payment {
             SET status = $2, transaction_id = $3, updated_at = CURRENT_TIMESTAMP
             WHERE id = $1
             RETURNING id, appointment_id, patient_id, amount, status, transaction_id, created_at, updated_at
-        `;  
+        `;
         const result = await db.query(query, [id, status, transaction_id]);
         return result.rows[0];
     }
@@ -94,7 +94,34 @@ class Payment {
     static async delete(id) {
         const query = 'DELETE FROM payments WHERE id = $1 RETURNING id';
         const result = await db.query(query, [id]);
-        return result.rows[0]; 
+        return result.rows[0];
+    }
+
+    /**
+     * Get revenue for a doctor grouped by time period.
+     * @param {string[]} slotIds - Array of slot IDs belonging to the doctor.
+     * @param {'daily'|'weekly'|'monthly'} period - Grouping granularity.
+     */
+    static async getDoctorRevenue(slotIds, period) {
+        if (!slotIds || slotIds.length === 0) return [];
+
+        const validPeriods = { daily: 'day', weekly: 'week', monthly: 'month' };
+        const truncUnit = validPeriods[period] || 'month';
+
+        const query = `
+            SELECT
+                DATE_TRUNC('${truncUnit}', created_at) AS period_start,
+                SUM(amount)::float                     AS revenue,
+                COUNT(*)::int                          AS count
+            FROM payments
+            WHERE slot_id = ANY($1)
+              AND status = 'SUCCESS'
+            GROUP BY period_start
+            ORDER BY period_start DESC
+            LIMIT 30
+        `;
+        const result = await db.query(query, [slotIds]);
+        return result.rows;
     }
 }
 

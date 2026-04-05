@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, adminMiddleware } = require('../middlewares/authMiddleware');
-const { listUsers, getUser, updateUser, toggleUserStatus } = require('../controllers/adminController');
+const { listUsers, getUser, updateUser, toggleUserStatus, listAuditLogs } = require('../controllers/adminController');
 
 // All admin routes require authentication + admin role
 router.use(authMiddleware, adminMiddleware);
@@ -33,5 +33,12 @@ router.put('/users/:id', updateUser);
  * @access Admin
  */
 router.patch('/users/:id/status', toggleUserStatus);
+
+/**
+ * @route  GET /admin/audit-logs
+ * @desc   Retrieve paginated audit log entries with optional filters
+ * @access Admin
+ */
+router.get('/audit-logs', listAuditLogs);
 
 module.exports = router;

@@ -85,6 +85,10 @@ const BookAppointment = ({ hideOverdues = false }) => {
   const [doctorsLoading, setDoctorsLoading] = useState(true);
   const [doctorsError, setDoctorsError] = useState("");
 
+  // Doctor search + specialty filter
+  const [doctorSearch, setDoctorSearch] = useState("");
+  const [specialtyFilter, setSpecialtyFilter] = useState("");
+
   // Selected doctor + slot picker
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [currentWeek, setCurrentWeek] = useState(getMonday(new Date()));
@@ -112,6 +116,7 @@ const BookAppointment = ({ hideOverdues = false }) => {
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [bookingsError, setBookingsError] = useState("");
   const [cancellingId, setCancellingId] = useState(null);
+  const [reschedulingFrom, setReschedulingFrom] = useState(null); // appointment being rescheduled
 
   // Chat per appointment
   const [chatApptId, setChatApptId] = useState(null);
@@ -194,13 +199,14 @@ const BookAppointment = ({ hideOverdues = false }) => {
     setBookingLoading(true);
     setBookingError("");
 
-    const fee = selectedDoctor?.consultation_fee || 100; // Default to 100 if not set
-    console.log("Booking with:", {
-      slotId: bookingSlot.id,
-      fee,
-      doctor: selectedDoctor,
-    });
+    // Rescheduling reuses the existing payment — skip Stripe
+    if (reschedulingFrom) {
+      await handlePaymentSuccess();
+      setBookingLoading(false);
+      return;
+    }
 
+    const fee = selectedDoctor?.consultation_fee || 100; // Default to 100 if not set
     const result = await createPayment(bookingSlot.id, fee);
 
     if (result.success) {
@@ -230,6 +236,17 @@ const BookAppointment = ({ hideOverdues = false }) => {
       });
 
       if (res.success) {
+        // If rescheduling, cancel the old appointment automatically
+        if (reschedulingFrom) {
+          await appointmentService.cancelBooking(reschedulingFrom.id);
+          setMyBookings((prev) =>
+            prev.map((b) =>
+              b.id === reschedulingFrom.id ? { ...b, status: "cancelled" } : b,
+            ),
+          );
+          setReschedulingFrom(null);
+        }
+
         setBookingSuccess({
           doctor: selectedDoctor.name,
           date: fmtDate(bookingSlot.appointmentDate),
@@ -309,6 +326,19 @@ const BookAppointment = ({ hideOverdues = false }) => {
       setBookingsError(res.error);
     }
     setCancellingId(null);
+  };
+
+  /* ── reschedule booking ─────────────────────────────────────── */
+
+  const handleReschedule = (appt) => {
+    const doctor = doctors.find(
+      (d) => String(d.doctor_id) === String(appt.doctor_id),
+    );
+    setReschedulingFrom(appt);
+    setSelectedDoctor(doctor || null);
+    setCurrentWeek(getMonday(new Date()));
+    setBookingSuccess(null);
+    setView("book");
   };
 
   /* ── helpers ────────────────────────────────────────────────── */
@@ -472,6 +502,26 @@ const BookAppointment = ({ hideOverdues = false }) => {
         .ba-chat-input-row textarea { flex:1; border:1.5px solid #e4eaf0; border-radius:8px; padding:8px 10px; font-size:13px; font-family:'DM Sans',sans-serif; resize:none; outline:none; background:#fff; color:#1a3a52; color-scheme:light; }
         .ba-chat-send-btn { padding:8px 18px; border-radius:8px; border:none; background:#1a6fa0; color:#fff; font-size:13px; font-weight:700; cursor:pointer; font-family:'DM Sans',sans-serif; }
         .ba-chat-send-btn:disabled { opacity:.5; cursor:default; }
+
+        /* ── doctor search / filter ── */
+        .ba-doc-search-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+        .ba-doc-search-wrap { position:relative; flex:1; min-width:180px; }
+        .ba-doc-search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#b0bec8; font-size:13px; pointer-events:none; }
+        .ba-doc-search { width:100%; padding:8px 12px 8px 32px; border:1.5px solid #e4eaf0; border-radius:8px; font-size:13px; font-family:'DM Sans',sans-serif; color:#1a3a52; background:#fff; box-sizing:border-box; transition:border-color .15s; }
+        .ba-doc-search:focus { outline:none; border-color:#1a6fa0; }
+        .ba-doc-result-count { font-size:12px; color:#7a8fa6; white-space:nowrap; }
+        .ba-specialty-pills { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+        .ba-spec-pill { padding:5px 14px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; white-space:nowrap; }
+        .ba-spec-pill:hover { border-color:#1a6fa0; color:#1a6fa0; }
+        .ba-spec-pill.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
+
+        /* ── reschedule button + notice ── */
+        .ba-reschedule-btn { padding:5px 12px; border-radius:7px; border:1px solid #93c5fd; background:#eff6ff; color:#1d4ed8; font-size:11px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all .15s; flex-shrink:0; }
+        .ba-reschedule-btn:hover { background:#dbeafe; }
+        .ba-reschedule-notice { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#fffbeb; border:1.5px solid #fcd34d; border-radius:10px; font-size:13px; color:#92400e; margin-bottom:16px; }
+        .ba-reschedule-notice strong { font-weight:700; }
+        .ba-reschedule-cancel { margin-left:auto; padding:4px 10px; border-radius:6px; border:1px solid #fcd34d; background:#fef3c7; color:#92400e; font-size:11px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; white-space:nowrap; }
+        .ba-reschedule-cancel:hover { background:#fde68a; }
       `}</style>
 
       {/* ── View toggler ── */}
@@ -496,6 +546,24 @@ const BookAppointment = ({ hideOverdues = false }) => {
       {/* ══════════════════════ BOOK VIEW ══════════════════════════ */}
       {view === "book" && (
         <>
+          {/* Reschedule notice */}
+          {reschedulingFrom && (
+            <div className="ba-reschedule-notice">
+              <span>🔄</span>
+              <span>
+                Rescheduling appointment with{" "}
+                <strong>Dr. {reschedulingFrom.doctor_name}</strong>. Pick a new
+                slot — the old one will be cancelled automatically.
+              </span>
+              <button
+                className="ba-reschedule-cancel"
+                onClick={() => setReschedulingFrom(null)}
+              >
+                Discard
+              </button>
+            </div>
+          )}
+
           {/* Success banner */}
           {bookingSuccess && (
             <div className="ba-success">
@@ -531,28 +599,99 @@ const BookAppointment = ({ hideOverdues = false }) => {
                   No verified doctors available at this time.
                 </div>
               ) : (
-                <div className="ba-doc-grid">
-                  {doctors.map((doc) => (
-                    <div
-                      key={doc.doctor_id}
-                      className="ba-doc-card"
-                      onClick={() => {
-                        setSelectedDoctor(doc);
-                        setBookingSuccess(null);
-                      }}
-                    >
-                      <div className="ba-doc-avatar">👨‍⚕️</div>
-                      <div className="ba-doc-name">Dr. {doc.name}</div>
-                      <div className="ba-doc-spec">{doc.specialization}</div>
-                      {doc.consultation_fee && (
-                        <span className="ba-doc-fee">
-                          Rs. {parseFloat(doc.consultation_fee).toFixed(2)} /
-                          session
+                (() => {
+                  const specialties = [
+                    ...new Set(
+                      doctors.map((d) => d.specialization).filter(Boolean),
+                    ),
+                  ].sort();
+                  const filteredDoctors = doctors.filter((d) => {
+                    const matchSearch =
+                      !doctorSearch ||
+                      d.name
+                        .toLowerCase()
+                        .includes(doctorSearch.toLowerCase()) ||
+                      (d.specialization || "")
+                        .toLowerCase()
+                        .includes(doctorSearch.toLowerCase());
+                    const matchSpec =
+                      !specialtyFilter || d.specialization === specialtyFilter;
+                    return matchSearch && matchSpec;
+                  });
+                  return (
+                    <>
+                      <div className="ba-doc-search-bar">
+                        <div className="ba-doc-search-wrap">
+                          <span className="ba-doc-search-icon">🔍</span>
+                          <input
+                            className="ba-doc-search"
+                            placeholder="Search by name or specialty…"
+                            value={doctorSearch}
+                            onChange={(e) => setDoctorSearch(e.target.value)}
+                          />
+                        </div>
+                        <span className="ba-doc-result-count">
+                          {filteredDoctors.length} doctor
+                          {filteredDoctors.length !== 1 ? "s" : ""}
                         </span>
+                      </div>
+                      {specialties.length > 0 && (
+                        <div className="ba-specialty-pills">
+                          <button
+                            className={`ba-spec-pill${specialtyFilter === "" ? " active" : ""}`}
+                            onClick={() => setSpecialtyFilter("")}
+                          >
+                            All
+                          </button>
+                          {specialties.map((s) => (
+                            <button
+                              key={s}
+                              className={`ba-spec-pill${specialtyFilter === s ? " active" : ""}`}
+                              onClick={() =>
+                                setSpecialtyFilter((prev) =>
+                                  prev === s ? "" : s,
+                                )
+                              }
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
                       )}
-                    </div>
-                  ))}
-                </div>
+                      {filteredDoctors.length === 0 ? (
+                        <div className="ba-doc-empty">
+                          No doctors match your search.
+                        </div>
+                      ) : (
+                        <div className="ba-doc-grid">
+                          {filteredDoctors.map((doc) => (
+                            <div
+                              key={doc.doctor_id}
+                              className="ba-doc-card"
+                              onClick={() => {
+                                setSelectedDoctor(doc);
+                                setBookingSuccess(null);
+                              }}
+                            >
+                              <div className="ba-doc-avatar">👨‍⚕️</div>
+                              <div className="ba-doc-name">Dr. {doc.name}</div>
+                              <div className="ba-doc-spec">
+                                {doc.specialization}
+                              </div>
+                              {doc.consultation_fee && (
+                                <span className="ba-doc-fee">
+                                  Rs.{" "}
+                                  {parseFloat(doc.consultation_fee).toFixed(2)}{" "}
+                                  / session
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
               )}
             </>
           ) : (
@@ -804,7 +943,15 @@ const BookAppointment = ({ hideOverdues = false }) => {
                             {fetchingSession === b.id ? "\u2026" : "📹 Join"}
                           </button>
                         )}{" "}
-                      {b.status === "pending" && (
+                      {(b.status === "pending" || b.status === "confirmed") && (
+                        <button
+                          className="ba-reschedule-btn"
+                          onClick={() => handleReschedule(b)}
+                        >
+                          🔄 Reschedule
+                        </button>
+                      )}
+                      {(b.status === "pending" || b.status === "confirmed") && (
                         <button
                           className="ba-cancel-btn"
                           onClick={() => handleCancel(b.id)}
@@ -997,7 +1144,13 @@ const BookAppointment = ({ hideOverdues = false }) => {
                 onClick={handleBook}
                 disabled={bookingLoading}
               >
-                {bookingLoading ? "Booking…" : "Confirm Appointment"}
+                {bookingLoading
+                  ? reschedulingFrom
+                    ? "Rescheduling…"
+                    : "Booking…"
+                  : reschedulingFrom
+                    ? "Confirm Reschedule"
+                    : "Confirm Appointment"}
               </button>
             </div>
           </div>

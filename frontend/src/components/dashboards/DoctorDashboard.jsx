@@ -21,6 +21,7 @@ import JitsiMeeting from "../JitsiMeeting";
 import PDFUploader from "../PDFUploader";
 import ScheduleManager from "../ScheduleManager";
 import PrescriptionManager from "../PrescriptionManager";
+import { getDoctorRevenue } from "../../utils/paymentService";
 
 const navItems = [
   { id: "overview", icon: "⊞", label: "Overview" },
@@ -29,6 +30,7 @@ const navItems = [
   { id: "patients", icon: "👥", label: "Patients" },
   { id: "consultations", icon: "💬", label: "Consultations" },
   { id: "prescriptions", icon: "💊", label: "Prescriptions" },
+  { id: "revenue", icon: "💰", label: "Revenue" },
   { id: "verification", icon: "✅", label: "Verification" },
   { id: "profile", icon: "👤", label: "Profile" },
 ];
@@ -40,6 +42,7 @@ const pageTitles = {
   patients: "Patients",
   consultations: "Consultations",
   prescriptions: "Prescriptions",
+  revenue: "Revenue",
   verification: "Verification Status",
   profile: "Doctor Profile",
 };
@@ -57,9 +60,23 @@ const isAppointmentOverdue = (appointment) => {
   return isDatePassed && isNotCompleted;
 };
 
+/** Format a monetary value with K / M / B suffix. Full value shown in tooltip via title attr. */
+const fmtRevenue = (amount) => {
+  if (amount == null || isNaN(amount)) return "0.00";
+  const abs = Math.abs(amount);
+  if (abs >= 1_000_000_000)
+    return (amount / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "") + "B";
+  if (abs >= 1_000_000)
+    return (amount / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
+  if (abs >= 1_000)
+    return (amount / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return amount.toFixed(2);
+};
+
 const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [showProfile, setShowProfile] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState(initialUser);
   const [uploadedDocuments, setUploadedDocuments] = useState({});
   const [uploadError, setUploadError] = useState("");
@@ -126,6 +143,23 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   const [patientSearch, setPatientSearch] = useState("");
   const [patientCurrentPage, setPatientCurrentPage] = useState(1);
   const patientItemsPerPage = 10;
+
+  // Overview stats
+  const [overviewStats, setOverviewStats] = useState({
+    todayCount: 0,
+    totalPatients: 0,
+    pendingCount: 0,
+    recentAppts: [],
+    totalRevenue: 0,
+    monthRevenue: 0,
+  });
+  const [overviewLoading, setOverviewLoading] = useState(false);
+
+  // Revenue tab
+  const [revenuePeriod, setRevenuePeriod] = useState("monthly");
+  const [revenueData, setRevenueData] = useState([]);
+  const [revenueLoading, setRevenueLoading] = useState(false);
+  const [revenueError, setRevenueError] = useState("");
 
   // Load doctor public profile when the profile tab is opened
   useEffect(() => {
@@ -267,6 +301,89 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
       }
       setPatientsLoading(false);
     });
+  }, [activeTab]);
+
+  // Load revenue data
+  useEffect(() => {
+    if (activeTab !== "revenue") return;
+    setRevenueLoading(true);
+    setRevenueError("");
+    appointmentService.getDoctorAppointments("").then(async (allRes) => {
+      const allAppts = allRes.success ? allRes.data || [] : [];
+      const slotIds = [
+        ...new Set(allAppts.map((a) => a.slot_id).filter(Boolean)),
+      ];
+      const rev = await getDoctorRevenue(slotIds, revenuePeriod);
+      if (rev.success) setRevenueData(rev.data || []);
+      else setRevenueError(rev.error || "Failed to load revenue");
+      setRevenueLoading(false);
+    });
+  }, [activeTab, revenuePeriod]);
+
+  // Load overview stats
+  useEffect(() => {
+    if (activeTab !== "overview") return;
+    setOverviewLoading(true);
+    Promise.all([
+      appointmentService.getDoctorAppointments("today"),
+      appointmentService.getDoctorAppointments(""),
+    ])
+      .then(async ([todayRes, allRes]) => {
+        const todayCount = todayRes.success ? (todayRes.data || []).length : 0;
+        const allAppts = allRes.success ? allRes.data || [] : [];
+        const patientMap = new Map();
+        allAppts.forEach((a) => {
+          if (a.patient_id) patientMap.set(a.patient_id, true);
+        });
+        const pendingCount = allAppts.filter(
+          (a) => a.status === "pending",
+        ).length;
+        const todayStr = new Date().toISOString().split("T")[0];
+        const recentAppts = allAppts
+          .filter(
+            (a) =>
+              a.appointment_date &&
+              a.appointment_date.split("T")[0] >= todayStr &&
+              a.status !== "cancelled",
+          )
+          .sort(
+            (a, b) =>
+              new Date(a.appointment_date) - new Date(b.appointment_date),
+          )
+          .slice(0, 5);
+
+        // Fetch revenue summary (all-time + this month)
+        const slotIds = [
+          ...new Set(allAppts.map((a) => a.slot_id).filter(Boolean)),
+        ];
+        const [allRevRes, monthRevRes] = await Promise.all([
+          getDoctorRevenue(slotIds, "monthly"),
+          getDoctorRevenue(slotIds, "monthly"),
+        ]);
+        const allRevRows = allRevRes.success ? allRevRes.data || [] : [];
+        const totalRevenue = allRevRows.reduce(
+          (s, r) => s + (r.revenue || 0),
+          0,
+        );
+        const thisMonthStr = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+        const monthRevenue = allRevRows
+          .filter(
+            (r) =>
+              r.period_start && r.period_start.slice(0, 7) === thisMonthStr,
+          )
+          .reduce((s, r) => s + (r.revenue || 0), 0);
+
+        setOverviewStats({
+          todayCount,
+          totalPatients: patientMap.size,
+          pendingCount,
+          recentAppts,
+          totalRevenue,
+          monthRevenue,
+        });
+        setOverviewLoading(false);
+      })
+      .catch(() => setOverviewLoading(false));
   }, [activeTab]);
 
   // Scroll chat to bottom when messages change
@@ -689,6 +806,51 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           margin-bottom: 3px;
         }
         .dd-stat-sub { font-size: 11px; color: #b0bec8; }
+        .dd-stat-accent { display:inline-block; width:3px; height:32px; border-radius:3px; position:absolute; left:0; top:50%; transform:translateY(-50%); }
+        .dd-stat { position:relative; overflow:hidden; transition: box-shadow 0.2s, border-color 0.2s; }
+        .dd-stat:hover { box-shadow: 0 4px 14px rgba(10,61,98,0.10); border-color: #b8d4ea; }
+
+        /* ── Overview greeting ── */
+        .dov-hero {
+          background: linear-gradient(135deg, #0a3d62 0%, #1a6fa0 60%, #3b9ed9 100%);
+          border-radius: 14px;
+          padding: 24px 28px;
+          margin-bottom: 20px;
+          color: #fff;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+        .dov-hero-left h1 { font-family:'Sora',sans-serif; font-size:22px; font-weight:700; margin:0 0 4px; line-height:1.2; }
+        .dov-hero-left p { font-size:13px; opacity:0.82; margin:0; }
+        .dov-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:11.5px; font-weight:700; margin-top:10px; }
+        .dov-badge.verified { background:rgba(74,222,128,0.18); border:1px solid rgba(74,222,128,0.4); color:#bbf7d0; }
+        .dov-badge.pending-v { background:rgba(251,191,36,0.18); border:1px solid rgba(251,191,36,0.4); color:#fde68a; }
+        .dov-badge.unverified { background:rgba(248,113,113,0.18); border:1px solid rgba(248,113,113,0.4); color:#fecaca; }
+        .dov-hero-avatar { width:64px; height:64px; border-radius:50%; background:rgba(255,255,255,0.15); border:2px solid rgba(255,255,255,0.3); display:flex; align-items:center; justify-content:center; font-size:30px; flex-shrink:0; }
+
+        /* ── Recent appointments ── */
+        .dov-recent { background:#fff; border:1px solid #e4eaf0; border-radius:10px; padding:18px 20px; margin-bottom:14px; box-sizing:border-box; overflow:hidden; }
+        .dov-recent-title { font-family:'Sora',sans-serif; font-size:13.5px; font-weight:700; color:#0a3d62; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
+        .dov-appt-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #f0f4f8; }
+        .dov-appt-row:last-child { border-bottom:none; padding-bottom:0; }
+        .dov-appt-avatar { width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg,#1a6fa0,#3b9ed9); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
+        .dov-appt-info { flex:1; min-width:0; }
+        .dov-appt-name { font-size:13.5px; font-weight:600; color:#1a3a52; }
+        .dov-appt-time { font-size:11.5px; color:#7a8fa6; margin-top:1px; }
+        .dov-appt-status { font-size:11px; font-weight:700; padding:3px 8px; border-radius:10px; white-space:nowrap; flex-shrink:0; }
+        .dov-appt-status.pending { background:#fef9c3; color:#a16207; border:1px solid #fde047; }
+        .dov-appt-status.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+        .dov-appt-status.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
+        .dov-empty { text-align:center; padding:28px 16px; color:#b0bec8; font-size:13px; }
+
+        @media (max-width: 768px) {
+          .dov-hero { padding: 18px 18px; }
+          .dov-hero-left h1 { font-size: 17px; }
+          .dov-hero-avatar { width:48px; height:48px; font-size:22px; }
+        }
 
         /* â”€â”€ Sections â”€â”€ */
         .dd-section {
@@ -697,6 +859,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           border-radius: 10px;
           padding: 20px 22px;
           margin-bottom: 14px;
+          box-sizing: border-box;
+          overflow: hidden;
         }
         .dd-section-title {
           font-family: 'Sora', sans-serif;
@@ -766,11 +930,92 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           background: #e4eaf0;
           flex-shrink: 0;
         }
+
+        /* ── Revenue tab ── */
+        .rev-period-tabs { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+        .rev-period-btn {
+          padding: 7px 18px;
+          border-radius: 20px;
+          border: 1.5px solid #e4eaf0;
+          background: #fff;
+          color: #5a7184;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.17s;
+        }
+        .rev-period-btn.active {
+          background: linear-gradient(135deg, #0a3d62, #1a6fa0);
+          color: #fff;
+          border-color: transparent;
+          box-shadow: 0 2px 8px rgba(10,61,98,0.18);
+        }
+        .rev-period-btn:not(.active):hover { border-color: #0a3d62; color: #0a3d62; }
+
+        .rev-summary-row { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:22px; }
+        .rev-summary-card {
+          background: #fff;
+          border-radius: 12px;
+          border: 1px solid #e9eef5;
+          padding: 16px 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .rev-summary-label { font-size: 12px; color: #7a8fa6; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+        .rev-summary-value { font-size: 24px; font-weight: 800; color: #0a3d62; font-family: 'Sora', sans-serif; }
+        .rev-summary-sub { font-size: 12px; color: #7a8fa6; }
+
+        .rev-chart-wrap {
+          background: #fff;
+          border-radius: 12px;
+          border: 1px solid #e9eef5;
+          padding: 20px 18px 16px;
+          margin-bottom: 20px;
+        }
+        .rev-chart-title { font-size: 14px; font-weight: 700; color: #1e3a52; margin-bottom: 16px; }
+        .rev-bars { display:flex; align-items:flex-end; gap:6px; height:160px; overflow-x:auto; padding-bottom:4px; }
+        .rev-bar-col { display:flex; flex-direction:column; align-items:center; flex:1; min-width:34px; max-width:64px; }
+        .rev-bar {
+          width: 100%;
+          border-radius: 5px 5px 0 0;
+          background: linear-gradient(180deg, #1a6fa0, #0a3d62);
+          transition: height 0.4s ease;
+          position: relative;
+          cursor: pointer;
+        }
+        .rev-bar:hover { opacity: 0.82; }
+        .rev-bar-label { font-size: 10px; color: #7a8fa6; margin-top: 5px; text-align:center; white-space:nowrap; }
+        .rev-bar-val { font-size: 10px; color: #3a5068; font-weight: 700; margin-bottom: 2px; }
+        .rev-no-data { text-align:center; padding: 40px 0; color: #b0bec8; font-size: 14px; }
+
+        .rev-table-wrap { background:#fff; border-radius:12px; border:1px solid #e9eef5; overflow:hidden; }
+        .rev-table { width:100%; border-collapse:collapse; font-size:13px; }
+        .rev-th { background:#f7f9fb; padding:10px 14px; font-weight:700; color:#1e3a52; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:0.4px; border-bottom:1px solid #e9eef5; }
+        .rev-td { padding:10px 14px; color:#3a5068; border-bottom:1px solid #f0f4f8; }
+        .rev-tr:last-child .rev-td { border-bottom:none; }
+        .rev-td.amount { font-weight:700; color:#0a7a3d; }
+
+        @media (max-width: 640px) {
+          .rev-summary-row { grid-template-columns: 1fr 1fr; }
+          .rev-summary-value { font-size: 19px; }
+        }
+        @media (max-width: 420px) {
+          .rev-summary-row { grid-template-columns: 1fr; }
+        }
       `}</style>
 
       <div className="dd-root">
+        {/* Sidebar backdrop */}
+        {sidebarOpen && (
+          <div
+            className="dd-sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
         {/* Sidebar */}
-        <aside className="dd-sidebar">
+        <aside className={`dd-sidebar${sidebarOpen ? " open" : ""}`}>
           <div className="dd-brand">
             <div className="dd-brand-row">
               <div className="dd-brand-icon">
@@ -798,7 +1043,10 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
               <button
                 key={item.id}
                 className={`dd-nav-btn${activeTab === item.id ? " active" : ""}`}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setSidebarOpen(false);
+                }}
               >
                 <span className="ni">{item.icon}</span>
                 {item.label}
@@ -825,6 +1073,13 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         {/* Main area */}
         <div className="dd-main">
           <header className="dd-topbar">
+            <button
+              className="dd-menu-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              ☰
+            </button>
             <span className="dd-topbar-title">{pageTitles[activeTab]}</span>
             <div className="dd-topbar-right">
               <button
@@ -834,45 +1089,256 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
               >
                 👨‍⚕️
               </button>
-              <span>Dr. {user?.name || "Doctor"}</span>
+              <span className="dd-topbar-username">
+                Dr. {user?.name || "Doctor"}
+              </span>
             </div>
           </header>
 
           <div className="dd-content">
-            {activeTab === "overview" && (
-              <>
-                <div className="dd-page-head">
-                  <h2>Welcome, Dr. {user?.name || "Doctor"}</h2>
-                  <p>Here's a summary of your activity today.</p>
-                </div>
-                <div className="dd-stats">
-                  <div className="dd-stat">
-                    <div className="dd-stat-top">
-                      <div className="dd-stat-label">Today's Appointments</div>
-                      <div className="dd-stat-icon">📅</div>
+            {activeTab === "overview" &&
+              (() => {
+                const hour = new Date().getHours();
+                const greeting =
+                  hour < 12
+                    ? "Good morning"
+                    : hour < 17
+                      ? "Good afternoon"
+                      : "Good evening";
+                const fmtDate = (d) =>
+                  new Date(d).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                  });
+                const fmt12 = (t) => {
+                  if (!t) return "";
+                  const [h, m] = t.split(":").map(Number);
+                  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+                };
+                const vBadge =
+                  verificationStatus?.status === "approved"
+                    ? { cls: "verified", icon: "✅", label: "Verified Doctor" }
+                    : verificationStatus?.status === "pending"
+                      ? {
+                          cls: "pending-v",
+                          icon: "⏳",
+                          label: "Verification Pending",
+                        }
+                      : verificationStatus?.status === "rejected"
+                        ? {
+                            cls: "unverified",
+                            icon: "❌",
+                            label: "Verification Rejected",
+                          }
+                        : {
+                            cls: "unverified",
+                            icon: "⚠️",
+                            label: "Not Verified",
+                          };
+                return (
+                  <>
+                    {/* Hero banner */}
+                    <div className="dov-hero">
+                      <div className="dov-hero-left">
+                        <h1>
+                          {greeting}, Dr. {user?.name || "Doctor"}!
+                        </h1>
+                        <p>Here's a snapshot of your practice today.</p>
+                        <div className={`dov-badge ${vBadge.cls}`}>
+                          {vBadge.icon} {vBadge.label}
+                        </div>
+                      </div>
+                      <div className="dov-hero-avatar">👨‍⚕️</div>
                     </div>
-                    <div className="dd-stat-value">0</div>
-                    <div className="dd-stat-sub">None scheduled</div>
-                  </div>
-                  <div className="dd-stat">
-                    <div className="dd-stat-top">
-                      <div className="dd-stat-label">Total Patients</div>
-                      <div className="dd-stat-icon">👥</div>
+
+                    {/* Stat cards */}
+                    <div className="dd-stats">
+                      <div className="dd-stat">
+                        <div
+                          className="dd-stat-accent"
+                          style={{ background: "#1a6fa0" }}
+                        />
+                        <div className="dd-stat-top">
+                          <div className="dd-stat-label">
+                            Today's Appointments
+                          </div>
+                          <div className="dd-stat-icon">📅</div>
+                        </div>
+                        <div className="dd-stat-value">
+                          {overviewLoading ? "—" : overviewStats.todayCount}
+                        </div>
+                        <div className="dd-stat-sub">
+                          {overviewStats.todayCount === 1
+                            ? "1 appointment"
+                            : `${overviewStats.todayCount} appointments`}{" "}
+                          today
+                        </div>
+                      </div>
+                      <div className="dd-stat">
+                        <div
+                          className="dd-stat-accent"
+                          style={{ background: "#16a34a" }}
+                        />
+                        <div className="dd-stat-top">
+                          <div className="dd-stat-label">Total Patients</div>
+                          <div className="dd-stat-icon">👥</div>
+                        </div>
+                        <div className="dd-stat-value">
+                          {overviewLoading ? "—" : overviewStats.totalPatients}
+                        </div>
+                        <div className="dd-stat-sub">
+                          {overviewStats.totalPatients === 0
+                            ? "No patients yet"
+                            : "Registered patients"}
+                        </div>
+                      </div>
+                      <div className="dd-stat">
+                        <div
+                          className="dd-stat-accent"
+                          style={{ background: "#d97706" }}
+                        />
+                        <div className="dd-stat-top">
+                          <div className="dd-stat-label">Pending Approvals</div>
+                          <div className="dd-stat-icon">⏳</div>
+                        </div>
+                        <div className="dd-stat-value">
+                          {overviewLoading ? "—" : overviewStats.pendingCount}
+                        </div>
+                        <div className="dd-stat-sub">
+                          {overviewStats.pendingCount === 0
+                            ? "All up to date"
+                            : "Awaiting your approval"}
+                        </div>
+                      </div>
+                      <div className="dd-stat">
+                        <div
+                          className="dd-stat-accent"
+                          style={{
+                            background:
+                              verificationStatus?.status === "approved"
+                                ? "#16a34a"
+                                : "#d97706",
+                          }}
+                        />
+                        <div className="dd-stat-top">
+                          <div className="dd-stat-label">Verification</div>
+                          <div className="dd-stat-icon">
+                            {verificationStatus?.status === "approved"
+                              ? "✅"
+                              : "🔖"}
+                          </div>
+                        </div>
+                        <div
+                          className="dd-stat-value"
+                          style={{ fontSize: "18px", paddingTop: "4px" }}
+                        >
+                          {verificationStatus?.status === "approved"
+                            ? "Active"
+                            : verificationStatus?.status === "pending"
+                              ? "Pending"
+                              : verificationStatus?.status === "rejected"
+                                ? "Rejected"
+                                : "None"}
+                        </div>
+                        <div className="dd-stat-sub">
+                          {verificationStatus?.status === "approved"
+                            ? "Account in good standing"
+                            : "Submit documents to verify"}
+                        </div>
+                      </div>
+                      <div className="dd-stat">
+                        <div
+                          className="dd-stat-accent"
+                          style={{ background: "#0d9488" }}
+                        />
+                        <div className="dd-stat-top">
+                          <div className="dd-stat-label">This Month</div>
+                          <div className="dd-stat-icon">💳</div>
+                        </div>
+                        <div
+                          className="dd-stat-value"
+                          style={{ fontSize: "16px" }}
+                        >
+                          {overviewLoading
+                            ? "—"
+                            : `LKR ${fmtRevenue(overviewStats.monthRevenue)}`}
+                        </div>
+                        <div className="dd-stat-sub">Revenue this month</div>
+                      </div>
+                      <div className="dd-stat">
+                        <div
+                          className="dd-stat-accent"
+                          style={{ background: "#7c3aed" }}
+                        />
+                        <div className="dd-stat-top">
+                          <div className="dd-stat-label">Total Revenue</div>
+                          <div className="dd-stat-icon">💰</div>
+                        </div>
+                        <div
+                          className="dd-stat-value"
+                          style={{ fontSize: "16px" }}
+                        >
+                          {overviewLoading
+                            ? "—"
+                            : `LKR ${fmtRevenue(overviewStats.totalRevenue)}`}
+                        </div>
+                        <div className="dd-stat-sub">
+                          All completed payments
+                        </div>
+                      </div>
                     </div>
-                    <div className="dd-stat-value">0</div>
-                    <div className="dd-stat-sub">No patients yet</div>
-                  </div>
-                  <div className="dd-stat">
-                    <div className="dd-stat-top">
-                      <div className="dd-stat-label">Consultations</div>
-                      <div className="dd-stat-icon">💬</div>
+
+                    {/* Upcoming appointments */}
+                    <div className="dov-recent">
+                      <div className="dov-recent-title">
+                        📆 Upcoming Appointments
+                      </div>
+                      {overviewLoading ? (
+                        <div className="dov-empty">Loading…</div>
+                      ) : overviewStats.recentAppts.length === 0 ? (
+                        <div className="dov-empty">
+                          No upcoming appointments scheduled.
+                        </div>
+                      ) : (
+                        overviewStats.recentAppts.map((appt) => {
+                          const initials = (appt.patient_name || "P")
+                            .split(" ")
+                            .map((w) => w[0])
+                            .join("")
+                            .toUpperCase()
+                            .slice(0, 2);
+                          return (
+                            <div key={appt.id} className="dov-appt-row">
+                              <div className="dov-appt-avatar">{initials}</div>
+                              <div className="dov-appt-info">
+                                <div className="dov-appt-name">
+                                  {appt.patient_name || "Patient"}
+                                </div>
+                                <div className="dov-appt-time">
+                                  {fmtDate(appt.appointment_date)}
+                                  {appt.start_time
+                                    ? ` · ${fmt12(appt.start_time)}`
+                                    : ""}
+                                </div>
+                              </div>
+                              <span
+                                className={`dov-appt-status ${appt.status}`}
+                              >
+                                {appt.status === "pending"
+                                  ? "⏳ Pending"
+                                  : appt.status === "confirmed"
+                                    ? "✅ Confirmed"
+                                    : "✔ Completed"}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
-                    <div className="dd-stat-value">0</div>
-                    <div className="dd-stat-sub">No active sessions</div>
-                  </div>
-                </div>
-              </>
-            )}
+                  </>
+                );
+              })()}
 
             {activeTab === "schedule" && (
               <>
@@ -890,7 +1356,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
               <>
                 <style>{`
                   .dp-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
-                  .dp-filter-btn { padding:6px 16px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; }
+                  .dp-filter-btn { padding:6px 16px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; white-space:nowrap; }
                   .dp-filter-btn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
                   .dp-section-title { font-family:'Sora',sans-serif; font-size:14px; font-weight:700; color:#0a3d62; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
                   .dp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
@@ -904,7 +1370,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .dp-info { flex:1; min-width:0; }
                   .dp-name { font-size:15px; font-weight:700; color:#0a3d62; margin-bottom:2px; }
                   .dp-email { font-size:12px; color:#7a8fa6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-                  .dp-meta { display:flex; gap:12px; margin-top:10px; padding-top:10px; border-top:1px solid #f0f4f8; }
+                  .dp-meta { display:flex; gap:12px; margin-top:10px; padding-top:10px; border-top:1px solid #f0f4f8; flex-wrap:wrap; }
                   .dp-meta-item { font-size:11px; color:#7a8fa6; }
                   .dp-meta-item strong { color:#0a3d62; font-weight:700; display:block; }
                   .dp-badges { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
@@ -912,6 +1378,33 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .dp-empty { text-align:center; padding:40px 24px; }
                   .dp-empty-icon { font-size:48px; margin-bottom:12px; opacity:0.5; }
                   .dp-empty-text { font-size:14px; color:#7a8fa6; }
+                  .dp-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:8px; border:1.5px solid #e4eaf0; width:100%; }
+                  .dp-table { width:100%; border-collapse:collapse; font-size:13px; min-width:480px; table-layout:fixed; }
+                  .dp-table col.col-name { width:24%; }
+                  .dp-table col.col-email { width:32%; }
+                  .dp-table col.col-appts { width:14%; }
+                  .dp-table col.col-visit { width:18%; }
+                  .dp-table col.col-action { width:12%; }
+                  .dp-th { padding:10px 12px; text-align:left; font-weight:700; color:#0a3d62; font-size:11.5px; text-transform:uppercase; letter-spacing:0.4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+                  .dp-th-center { text-align:center; }
+                  .dp-td { padding:10px 12px; color:#1a3a52; overflow:hidden; text-overflow:ellipsis; }
+                  .dp-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:16px; padding-top:12px; border-top:1px solid #f0f4f8; }
+                  .dp-pagination-info { font-size:12px; color:#7a8fa6; }
+                  .dp-pagination-btns { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+                  .dp-pg-btn { padding:6px 12px; border:1.5px solid #e4eaf0; border-radius:6px; background:#f8fafc; color:#3a5068; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; min-width:32px; text-align:center; }
+                  .dp-pg-btn:disabled { opacity:.5; cursor:default; }
+                  .dp-pg-btn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
+                  .dp-pg-btn:not(:disabled):hover { background:#eff6ff; border-color:#1a6fa0; }
+                  @media (max-width: 768px) {
+                    .dp-grid { grid-template-columns: 1fr; }
+                    .dp-card { padding:14px; }
+                  }
+                  @media (max-width: 480px) {
+                    .dp-section-title { font-size:13px; }
+                    .dp-name { font-size:14px; }
+                    .dp-pagination { flex-direction:column; align-items:flex-start; }
+                    .dp-pagination-btns { width:100%; justify-content:center; }
+                  }
                 `}</style>
                 <div className="dd-page-head">
                   <h2>Patients</h2>
@@ -1026,6 +1519,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                           }}
                           style={{
                             width: "100%",
+                            boxSizing: "border-box",
                             padding: "10px 14px",
                             border: "1.5px solid #e4eaf0",
                             borderRadius: "8px",
@@ -1035,6 +1529,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                             transition: "border-color 0.2s",
                             background: "#fff",
                             color: "#1a3a52",
+                            display: "block",
                           }}
                           onFocus={(e) =>
                             (e.target.style.borderColor = "#1a6fa0")
@@ -1086,20 +1581,15 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
                         return (
                           <>
-                            <div
-                              style={{
-                                overflowX: "auto",
-                                borderRadius: "8px",
-                                border: "1.5px solid #e4eaf0",
-                              }}
-                            >
-                              <table
-                                style={{
-                                  width: "100%",
-                                  borderCollapse: "collapse",
-                                  fontSize: "13px",
-                                }}
-                              >
+                            <div className="dp-table-wrap">
+                              <table className="dp-table">
+                                <colgroup>
+                                  <col className="col-name" />
+                                  <col className="col-email" />
+                                  <col className="col-appts" />
+                                  <col className="col-visit" />
+                                  <col className="col-action" />
+                                </colgroup>
                                 <thead>
                                   <tr
                                     style={{
@@ -1107,69 +1597,13 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                       borderBottom: "1.5px solid #e4eaf0",
                                     }}
                                   >
-                                    <th
-                                      style={{
-                                        padding: "12px 14px",
-                                        textAlign: "left",
-                                        fontWeight: 700,
-                                        color: "#0a3d62",
-                                        fontSize: "12px",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.4px",
-                                      }}
-                                    >
-                                      Patient Name
-                                    </th>
-                                    <th
-                                      style={{
-                                        padding: "12px 14px",
-                                        textAlign: "left",
-                                        fontWeight: 700,
-                                        color: "#0a3d62",
-                                        fontSize: "12px",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.4px",
-                                      }}
-                                    >
-                                      Email
-                                    </th>
-                                    <th
-                                      style={{
-                                        padding: "12px 14px",
-                                        textAlign: "center",
-                                        fontWeight: 700,
-                                        color: "#0a3d62",
-                                        fontSize: "12px",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.4px",
-                                      }}
-                                    >
+                                    <th className="dp-th">Patient Name</th>
+                                    <th className="dp-th">Email</th>
+                                    <th className="dp-th dp-th-center">
                                       Appointments
                                     </th>
-                                    <th
-                                      style={{
-                                        padding: "12px 14px",
-                                        textAlign: "left",
-                                        fontWeight: 700,
-                                        color: "#0a3d62",
-                                        fontSize: "12px",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.4px",
-                                      }}
-                                    >
-                                      Last Visit
-                                    </th>
-                                    <th
-                                      style={{
-                                        padding: "12px 14px",
-                                        textAlign: "center",
-                                        fontWeight: 700,
-                                        color: "#0a3d62",
-                                        fontSize: "12px",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.4px",
-                                      }}
-                                    >
+                                    <th className="dp-th">Last Visit</th>
+                                    <th className="dp-th dp-th-center">
                                       Action
                                     </th>
                                   </tr>
@@ -1195,17 +1629,17 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                         }}
                                       >
                                         <td
+                                          className="dp-td"
                                           style={{
-                                            padding: "12px 14px",
-                                            color: "#0a3d62",
                                             fontWeight: 600,
+                                            color: "#0a3d62",
                                           }}
                                         >
                                           {patient.name}
                                         </td>
                                         <td
+                                          className="dp-td"
                                           style={{
-                                            padding: "12px 14px",
                                             color: patient.email
                                               ? "#1a3a52"
                                               : "#c0c0c0",
@@ -1220,8 +1654,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                             : "—"}
                                         </td>
                                         <td
+                                          className="dp-td"
                                           style={{
-                                            padding: "12px 14px",
                                             textAlign: "center",
                                             color: "#1a6fa0",
                                             fontWeight: 700,
@@ -1230,18 +1664,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                           {patient.appointmentCount}
                                         </td>
                                         <td
-                                          style={{
-                                            padding: "12px 14px",
-                                            color: "#7a8fa6",
-                                          }}
+                                          className="dp-td"
+                                          style={{ color: "#7a8fa6" }}
                                         >
                                           {lastApptDate}
                                         </td>
                                         <td
-                                          style={{
-                                            padding: "12px 14px",
-                                            textAlign: "center",
-                                          }}
+                                          className="dp-td"
+                                          style={{ textAlign: "center" }}
                                         >
                                           <button
                                             onClick={() =>
@@ -1277,19 +1707,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                             </div>
 
                             {/* Pagination */}
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                marginTop: "16px",
-                                paddingTop: "12px",
-                                borderTop: "1px solid #f0f4f8",
-                              }}
-                            >
-                              <span
-                                style={{ fontSize: "12px", color: "#7a8fa6" }}
-                              >
+                            <div className="dp-pagination">
+                              <span className="dp-pagination-info">
                                 Showing {startIndex + 1} to{" "}
                                 {Math.min(
                                   startIndex + patientItemsPerPage,
@@ -1297,103 +1716,29 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                 )}{" "}
                                 of {filteredPatients.length} patients
                               </span>
-                              <div style={{ display: "flex", gap: "6px" }}>
+                              <div className="dp-pagination-btns">
                                 <button
+                                  className="dp-pg-btn"
                                   onClick={() =>
                                     setPatientCurrentPage(
                                       Math.max(1, patientCurrentPage - 1),
                                     )
                                   }
                                   disabled={patientCurrentPage === 1}
-                                  style={{
-                                    padding: "6px 12px",
-                                    border: "1.5px solid #e4eaf0",
-                                    borderRadius: "6px",
-                                    background: "#f8fafc",
-                                    color: "#3a5068",
-                                    fontSize: "12px",
-                                    fontWeight: 600,
-                                    cursor:
-                                      patientCurrentPage === 1
-                                        ? "default"
-                                        : "pointer",
-                                    opacity: patientCurrentPage === 1 ? 0.5 : 1,
-                                    transition: "all 0.15s",
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (patientCurrentPage !== 1) {
-                                      e.target.style.background = "#eff6ff";
-                                      e.target.style.borderColor = "#1a6fa0";
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.target.style.background = "#f8fafc";
-                                    e.target.style.borderColor = "#e4eaf0";
-                                  }}
                                 >
-                                  ← Previous
+                                  ← Prev
                                 </button>
-
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    gap: "4px",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  {Array.from(
-                                    { length: totalPages },
-                                    (_, i) => (
-                                      <button
-                                        key={i + 1}
-                                        onClick={() =>
-                                          setPatientCurrentPage(i + 1)
-                                        }
-                                        style={{
-                                          width: "32px",
-                                          height: "32px",
-                                          border:
-                                            patientCurrentPage === i + 1
-                                              ? "1.5px solid #1a6fa0"
-                                              : "1.5px solid #e4eaf0",
-                                          borderRadius: "6px",
-                                          background:
-                                            patientCurrentPage === i + 1
-                                              ? "#eff6ff"
-                                              : "#f8fafc",
-                                          color:
-                                            patientCurrentPage === i + 1
-                                              ? "#1a6fa0"
-                                              : "#3a5068",
-                                          fontSize: "12px",
-                                          fontWeight: 600,
-                                          cursor: "pointer",
-                                          transition: "all 0.15s",
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          if (patientCurrentPage !== i + 1) {
-                                            e.target.style.background =
-                                              "#eff6ff";
-                                            e.target.style.borderColor =
-                                              "#1a6fa0";
-                                          }
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          if (patientCurrentPage !== i + 1) {
-                                            e.target.style.background =
-                                              "#f8fafc";
-                                            e.target.style.borderColor =
-                                              "#e4eaf0";
-                                          }
-                                        }}
-                                      >
-                                        {i + 1}
-                                      </button>
-                                    ),
-                                  )}
-                                </div>
-
+                                {Array.from({ length: totalPages }, (_, i) => (
+                                  <button
+                                    key={i + 1}
+                                    className={`dp-pg-btn${patientCurrentPage === i + 1 ? " active" : ""}`}
+                                    onClick={() => setPatientCurrentPage(i + 1)}
+                                  >
+                                    {i + 1}
+                                  </button>
+                                ))}
                                 <button
+                                  className="dp-pg-btn"
                                   onClick={() =>
                                     setPatientCurrentPage(
                                       Math.min(
@@ -1403,34 +1748,6 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                                     )
                                   }
                                   disabled={patientCurrentPage === totalPages}
-                                  style={{
-                                    padding: "6px 12px",
-                                    border: "1.5px solid #e4eaf0",
-                                    borderRadius: "6px",
-                                    background: "#f8fafc",
-                                    color: "#3a5068",
-                                    fontSize: "12px",
-                                    fontWeight: 600,
-                                    cursor:
-                                      patientCurrentPage === totalPages
-                                        ? "default"
-                                        : "pointer",
-                                    opacity:
-                                      patientCurrentPage === totalPages
-                                        ? 0.5
-                                        : 1,
-                                    transition: "all 0.15s",
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (patientCurrentPage !== totalPages) {
-                                      e.target.style.background = "#eff6ff";
-                                      e.target.style.borderColor = "#1a6fa0";
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.target.style.background = "#f8fafc";
-                                    e.target.style.borderColor = "#e4eaf0";
-                                  }}
                                 >
                                   Next →
                                 </button>
@@ -1487,6 +1804,180 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                 <PrescriptionManager />
               </>
             )}
+
+            {activeTab === "revenue" &&
+              (() => {
+                const totalRevenue = revenueData.reduce(
+                  (s, r) => s + (r.revenue || 0),
+                  0,
+                );
+                const totalTx = revenueData.reduce(
+                  (s, r) => s + (r.count || 0),
+                  0,
+                );
+                const avgTx = totalTx > 0 ? totalRevenue / totalTx : 0;
+                const maxRev =
+                  revenueData.length > 0
+                    ? Math.max(...revenueData.map((r) => r.revenue || 0))
+                    : 1;
+
+                const fmtLabel = (periodStart) => {
+                  if (!periodStart) return "";
+                  const d = new Date(periodStart);
+                  if (revenuePeriod === "daily")
+                    return d.toLocaleDateString("en-GB", {
+                      day: "2-digit",
+                      month: "short",
+                    });
+                  if (revenuePeriod === "weekly") {
+                    const weekNum = Math.ceil(d.getDate() / 7);
+                    return `W${weekNum} ${d.toLocaleDateString("en-GB", { month: "short" })}`;
+                  }
+                  return d.toLocaleDateString("en-GB", {
+                    month: "short",
+                    year: "2-digit",
+                  });
+                };
+
+                const displayed = [...revenueData].reverse();
+
+                return (
+                  <>
+                    <div className="dd-page-head">
+                      <h2>Revenue</h2>
+                      <p>
+                        Your earnings from completed payments, grouped by
+                        period.
+                      </p>
+                    </div>
+
+                    {/* Period selector */}
+                    <div className="rev-period-tabs">
+                      {["daily", "weekly", "monthly"].map((p) => (
+                        <button
+                          key={p}
+                          className={`rev-period-btn${revenuePeriod === p ? " active" : ""}`}
+                          onClick={() => setRevenuePeriod(p)}
+                        >
+                          {p.charAt(0).toUpperCase() + p.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {revenueLoading ? (
+                      <div className="rev-no-data">Loading revenue data…</div>
+                    ) : revenueError ? (
+                      <div className="rev-no-data" style={{ color: "#c0392b" }}>
+                        {revenueError}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Summary cards */}
+                        <div className="rev-summary-row">
+                          <div className="rev-summary-card">
+                            <div className="rev-summary-label">
+                              Total Revenue
+                            </div>
+                            <div className="rev-summary-value">
+                              LKR {fmtRevenue(totalRevenue)}
+                            </div>
+                            <div className="rev-summary-sub">
+                              All successful payments
+                            </div>
+                          </div>
+                          <div className="rev-summary-card">
+                            <div className="rev-summary-label">
+                              Transactions
+                            </div>
+                            <div className="rev-summary-value">{totalTx}</div>
+                            <div className="rev-summary-sub">
+                              Completed payments
+                            </div>
+                          </div>
+                          <div className="rev-summary-card">
+                            <div className="rev-summary-label">
+                              Avg per Transaction
+                            </div>
+                            <div className="rev-summary-value">
+                              LKR {fmtRevenue(avgTx)}
+                            </div>
+                            <div className="rev-summary-sub">
+                              Average payment value
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bar chart */}
+                        <div className="rev-chart-wrap">
+                          <div className="rev-chart-title">
+                            Revenue by{" "}
+                            {revenuePeriod.charAt(0).toUpperCase() +
+                              revenuePeriod.slice(1)}{" "}
+                            Period
+                          </div>
+                          {displayed.length === 0 ? (
+                            <div className="rev-no-data">
+                              No completed payments found for this period.
+                            </div>
+                          ) : (
+                            <div className="rev-bars">
+                              {displayed.map((row, i) => {
+                                const pct =
+                                  maxRev > 0
+                                    ? ((row.revenue || 0) / maxRev) * 100
+                                    : 0;
+                                return (
+                                  <div key={i} className="rev-bar-col">
+                                    <div className="rev-bar-val">
+                                      LKR {fmtRevenue(row.revenue || 0)}
+                                    </div>
+                                    <div
+                                      className="rev-bar"
+                                      style={{ height: `${Math.max(pct, 4)}%` }}
+                                      title={`LKR ${(row.revenue || 0).toFixed(2)} (${row.count} tx)`}
+                                    />
+                                    <div className="rev-bar-label">
+                                      {fmtLabel(row.period_start)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Detail table */}
+                        {displayed.length > 0 && (
+                          <div className="rev-table-wrap">
+                            <table className="rev-table">
+                              <thead>
+                                <tr>
+                                  <th className="rev-th">Period</th>
+                                  <th className="rev-th">Transactions</th>
+                                  <th className="rev-th">Revenue</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {displayed.map((row, i) => (
+                                  <tr key={i} className="rev-tr">
+                                    <td className="rev-td">
+                                      {fmtLabel(row.period_start)}
+                                    </td>
+                                    <td className="rev-td">{row.count}</td>
+                                    <td className="rev-td amount">
+                                      LKR {fmtRevenue(row.revenue || 0)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                );
+              })()}
 
             {activeTab === "verification" && (
               <>
@@ -1901,13 +2392,13 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
             {activeTab === "appointments" && (
               <>
                 <style>{`
-                  .da-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
-                  .da-fbtn { padding:6px 16px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; }
+                  .da-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:20px; padding:4px 0; }
+                  .da-fbtn { padding:6px 16px; border-radius:20px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#3a5068; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; white-space:nowrap; }
                   .da-fbtn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
                   .da-card { background:#fff; border:1.5px solid #e4eaf0; border-radius:12px; margin-bottom:12px; overflow:hidden; }
-                  .da-card-header { display:flex; align-items:center; gap:14px; padding:14px 18px; cursor:pointer; }
-                  .da-avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#1a6fa0,#3b9ed9); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; flex-shrink:0; }
-                  .da-card-info { flex:1; min-width:0; }
+                  .da-card-header { display:flex; align-items:flex-start; gap:14px; padding:14px 18px; cursor:pointer; flex-wrap:wrap; }
+                  .da-avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#1a6fa0,#3b9ed9); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; flex-shrink:0; margin-top:2px; }
+                  .da-card-info { flex:1; min-width:160px; }
                   .da-patient-name { font-size:15px; font-weight:700; color:#1a3a52; }
                   .da-appt-time { font-size:12px; color:#7a8fa6; margin-top:2px; }
                   .da-reason { font-size:12px; color:#5a7a95; margin-top:3px; font-style:italic; }
@@ -1918,15 +2409,15 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-badge.ended { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
                   .da-badge.overdue { background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; }
                   .da-card.overdue { opacity:.6; }
-                  .da-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; }
-                  .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-actions { display:flex; gap:6px; align-items:center; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; }
+                  .da-approve-btn { padding:6px 14px; border-radius:8px; border:none; background:#15803d; color:#fff; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
                   .da-approve-btn:disabled { opacity:.5; cursor:default; }
-                  .da-join-btn { padding:6px 14px; border-radius:8px; border:none; background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; font-size:12px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; }
+                  .da-join-btn { padding:6px 14px; border-radius:8px; border:none; background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; font-size:12px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap; }
                   .da-join-btn:disabled { opacity:.6; cursor:default; }
-                  .da-end-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #dc2626; background:#fff; color:#dc2626; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-end-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #dc2626; background:#fff; color:#dc2626; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
                   .da-end-btn:disabled { opacity:.5; cursor:default; }
                   .da-tele-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:8px; background:#f0fdf4; border:1px solid #86efac; color:#15803d; font-size:10.5px; font-weight:700; margin-left:6px; }
-                  .da-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-chat-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #1a6fa0; background:#fff; color:#1a6fa0; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
                   .da-chat-panel { border-top:1.5px solid #e4eaf0; background:#f8fafc; }
                   .da-chat-messages { max-height:240px; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:8px; }
                   .da-msg { max-width:72%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.45; }
@@ -1939,7 +2430,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-send-btn:disabled { opacity:.5; cursor:default; }
                   .da-empty { text-align:center; padding:40px; color:#7a8fa6; font-size:14px; }
                   .da-section-label { font-size:11px; font-weight:700; color:#7a8fa6; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 12px; }
-                  .da-records-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #7c3aed; background:#fff; color:#7c3aed; font-size:12px; font-weight:700; cursor:pointer; }
+                  .da-records-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #7c3aed; background:#fff; color:#7c3aed; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
                   .da-records-panel { border-top:1.5px solid #e4eaf0; background:#faf5ff; padding:16px 18px; }
                   .da-records-panel-title { font-family:'Sora',sans-serif; font-size:13px; font-weight:700; color:#4c1d95; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
                   .da-rec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
@@ -1954,6 +2445,13 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-rec-view { display:flex; align-items:center; justify-content:center; gap:4px; padding:5px 0; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-size:11.5px; font-weight:700; text-decoration:none; transition:all .15s; }
                   .da-rec-view:hover { background:#dbeafe; }
                   .da-rec-empty { text-align:center; padding:20px; color:#7a8fa6; font-size:13px; }
+                  @media (max-width: 640px) {
+                    .da-card-header { gap:10px; padding:12px 14px; }
+                    .da-card-info { min-width: calc(100% - 52px); }
+                    .da-actions { width:100%; justify-content:flex-start; border-top:1px solid #f0f4f8; padding-top:10px; margin-top:4px; }
+                    .da-fbtn { padding:5px 10px; font-size:12px; }
+                    .da-approve-btn, .da-join-btn, .da-end-btn, .da-chat-btn, .da-records-btn { padding:5px 10px; font-size:11.5px; }
+                  }
                 `}</style>
                 <div className="dd-page-head">
                   <h2>My Appointments</h2>

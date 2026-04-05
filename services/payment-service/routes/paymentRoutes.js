@@ -3,12 +3,15 @@ const router = express.Router();
 const { authMiddleware } = require('../middlewares/authMiddleware');
 const { insertPayment, getAllPayments, getUserPayments, getPayment,
     fetchPaymentByAppointmentId, handleStripeWebhook, fetchPaymentsByStatus, removePayment,
-    getAdminStats, confirmPayment } = require('../controllers/paymentController');
+    getAdminStats, confirmPayment, getDoctorRevenue } = require('../controllers/paymentController');
 
 // Payment Controller
 
 // Admin stats
 router.get('/admin/stats', authMiddleware, getAdminStats);
+
+// Doctor revenue (slot-based, filtered by period)
+router.get('/doctor/revenue', authMiddleware, getDoctorRevenue);
 
 // Post requests
 router.post('/insertPayment', authMiddleware, insertPayment);

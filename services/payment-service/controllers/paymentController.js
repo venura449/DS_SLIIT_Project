@@ -232,6 +232,26 @@ exports.getAdminStats = async (req, res) => {
     }
 };
 
+// Doctor revenue — grouped by day / week / month
+exports.getDoctorRevenue = async (req, res) => {
+    try {
+        const { slotIds, period = 'monthly' } = req.query;
+
+        const validPeriods = ['daily', 'weekly', 'monthly'];
+        if (!validPeriods.includes(period)) {
+            return res.status(400).json({ success: false, error: 'Invalid period. Use daily, weekly, or monthly.' });
+        }
+
+        const ids = slotIds ? slotIds.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const Payment = require('../models/payment');
+        const rows = await Payment.getDoctorRevenue(ids, period);
+
+        res.status(200).json({ success: true, data: rows });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 // Confirm payment after successful Stripe client-side confirmation
 exports.confirmPayment = async (req, res) => {
     try {

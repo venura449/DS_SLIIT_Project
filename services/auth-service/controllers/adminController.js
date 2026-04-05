@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const AuditLog = require('../models/AuditLog');
+const { logAuditEvent } = require('../services/auditLogService');
 
 /**
  * GET /admin/users
@@ -72,6 +74,17 @@ const updateUser = async (req, res) => {
         }
 
         const updated = await User.adminUpdate(id, { name, phone, user_type });
+
+        await logAuditEvent(req, {
+            action: 'USER_UPDATED',
+            resourceType: 'user',
+            resourceId: id,
+            details: {
+                targetEmail: existing.email,
+                changes: { name, phone, user_type },
+            },
+        });
+
         res.status(200).json({ success: true, message: 'User updated successfully', data: { user: updated } });
     } catch (error) {
         console.error('Admin updateUser error:', error);
@@ -108,6 +121,16 @@ const toggleUserStatus = async (req, res) => {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
+        await logAuditEvent(req, {
+            action: is_active ? 'USER_ACTIVATED' : 'USER_DEACTIVATED',
+            resourceType: 'user',
+            resourceId: id,
+            details: {
+                targetEmail: existing.email,
+                targetName: existing.name,
+            },
+        });
+
         res.status(200).json({
             success: true,
             message: `User ${is_active ? 'activated' : 'deactivated'} successfully`,
@@ -119,4 +142,39 @@ const toggleUserStatus = async (req, res) => {
     }
 };
 
-module.exports = { listUsers, getUser, updateUser, toggleUserStatus };
+module.exports = { listUsers, getUser, updateUser, toggleUserStatus, listAuditLogs };
+
+/**
+ * GET /admin/audit-logs
+ * List audit log entries with optional filters and pagination.
+ * Query params: page, limit, action, search, from, to
+ */
+async function listAuditLogs(req, res) {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+        const offset = (page - 1) * limit;
+        const action = (req.query.action || '').trim();
+        const search = (req.query.search || '').trim();
+        const from = (req.query.from || '').trim() || null;
+        const to = (req.query.to || '').trim() || null;
+
+        const { logs, total } = await AuditLog.findAllWithFilters({ action, search, from, to, limit, offset });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                logs,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages: Math.ceil(total / limit),
+                },
+            },
+        });
+    } catch (error) {
+        console.error('Admin listAuditLogs error:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch audit logs', error: error.message });
+    }
+}
