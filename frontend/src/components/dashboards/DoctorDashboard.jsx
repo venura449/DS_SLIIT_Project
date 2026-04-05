@@ -99,6 +99,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
   // Appointments tab
   const [apptFilter, setApptFilter] = useState("upcoming");
+  const [apptSearch, setApptSearch] = useState("");
+  const [apptTypeFilter, setApptTypeFilter] = useState("all");
   const [appointments, setAppointments] = useState([]);
   const [apptLoading, setApptLoading] = useState(false);
   const [apptError, setApptError] = useState("");
@@ -141,6 +143,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
   });
   const [patientsLoading, setPatientsLoading] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
+  const [patientVisitFilter, setPatientVisitFilter] = useState("all");
   const [patientCurrentPage, setPatientCurrentPage] = useState(1);
   const patientItemsPerPage = 10;
 
@@ -572,6 +575,18 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
     }
   };
 
+  const doctorInitials = (user?.name || "D")
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+  const todayLabel = new Date().toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
   return (
     <>
       <style>{`
@@ -649,9 +664,18 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           width: 100%;
           text-align: left;
           font-family: 'DM Sans', sans-serif;
+          position: relative;
         }
-        .dd-nav-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
-        .dd-nav-btn.active { background: rgba(125,216,248,0.15); color: #7dd8f8; }
+        .dd-nav-btn:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); }
+        .dd-nav-btn.active { background: rgba(125,216,248,0.15); color: #7dd8f8; font-weight: 600; }
+        .dd-nav-btn.active::before {
+          content: '';
+          position: absolute;
+          left: 0; top: 20%; bottom: 20%;
+          width: 3px;
+          background: #7dd8f8;
+          border-radius: 0 3px 3px 0;
+        }
         .dd-nav-btn .ni { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
 
         .dd-footer {
@@ -663,14 +687,20 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           align-items: center;
           gap: 9px;
           margin-bottom: 10px;
+          padding: 6px 8px;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: background 0.15s;
         }
+        .dd-footer-user:hover { background: rgba(255,255,255,0.07); }
         .dd-avatar {
           width: 32px; height: 32px;
-          background: rgba(125,216,248,0.2);
+          background: linear-gradient(135deg, #1a6fa0, #7dd8f8);
           border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
-          font-size: 14px;
+          font-size: 12px; font-weight: 700; color: #fff;
           flex-shrink: 0;
+          text-transform: uppercase; letter-spacing: 0.5px;
         }
         .dd-footer-name {
           font-size: 12.5px;
@@ -696,6 +726,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           font-size: 12px;
           font-weight: 500;
           transition: all 0.2s;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
         }
         .dd-signout:hover {
           background: rgba(255,70,70,0.15);
@@ -715,13 +746,15 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           background: #fff;
           border-bottom: 1px solid #e4eaf0;
           padding: 0 24px;
-          height: 52px;
+          height: 54px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           position: sticky;
           top: 0; z-index: 50;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
+        .dd-topbar-left { display: flex; align-items: center; gap: 10px; }
         .dd-topbar-title {
           font-family: 'Sora', sans-serif;
           font-size: 15px;
@@ -735,24 +768,56 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
           align-items: center;
           gap: 12px;
         }
+        .dd-topbar-date {
+          font-size: 12px;
+          color: #b0bec8;
+          font-weight: 500;
+        }
+        .dd-topbar-username {
+          font-size: 13px;
+          font-weight: 600;
+          color: #1a3550;
+        }
         .dd-profile-btn {
           width: 36px;
           height: 36px;
           border-radius: 50%;
-          background: linear-gradient(135deg, rgba(10, 61, 98, 0.1), rgba(125, 216, 248, 0.1));
-          border: 1.5px solid #e4eaf0;
+          background: linear-gradient(135deg, #1a6fa0, #7dd8f8);
+          border: 2px solid #e4eaf0;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           transition: all 0.2s;
-          font-size: 16px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #fff;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
         .dd-profile-btn:hover {
-          background: linear-gradient(135deg, rgba(10, 61, 98, 0.15), rgba(125, 216, 248, 0.15));
           border-color: #7dd8f8;
           transform: scale(1.05);
+          box-shadow: 0 0 0 3px rgba(125,216,248,0.25);
         }
+        /* Hamburger — hidden on desktop, shown on mobile */
+        .dd-menu-btn {
+          display: none;
+          align-items: center;
+          justify-content: center;
+          width: 34px; height: 34px;
+          background: none;
+          border: 1.5px solid #e4eaf0;
+          border-radius: 7px;
+          cursor: pointer;
+          font-size: 17px;
+          color: #0a3d62;
+          flex-shrink: 0;
+          transition: background 0.15s;
+        }
+        .dd-menu-btn:hover { background: #f0f4f8; }
+        /* Sidebar backdrop — hidden on desktop */
+        .dd-sidebar-backdrop { display: none; }
         .dd-content { padding: 22px 24px; }
 
         /* â”€â”€ Alert banner â”€â”€ */
@@ -845,12 +910,6 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         .dov-appt-status.confirmed { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
         .dov-appt-status.completed { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
         .dov-empty { text-align:center; padding:28px 16px; color:#b0bec8; font-size:13px; }
-
-        @media (max-width: 768px) {
-          .dov-hero { padding: 18px 18px; }
-          .dov-hero-left h1 { font-size: 17px; }
-          .dov-hero-avatar { width:48px; height:48px; font-size:22px; }
-        }
 
         /* â”€â”€ Sections â”€â”€ */
         .dd-section {
@@ -1004,6 +1063,40 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         @media (max-width: 420px) {
           .rev-summary-row { grid-template-columns: 1fr; }
         }
+
+        /* ─── Responsive layout ─── */
+        @media (max-width: 768px) {
+          .dd-sidebar {
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+            z-index: 200;
+            box-shadow: none;
+          }
+          .dd-sidebar.open {
+            transform: translateX(0);
+            box-shadow: 6px 0 24px rgba(0,0,0,0.22);
+          }
+          .dd-sidebar-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.38);
+            z-index: 150;
+          }
+          .dd-main { margin-left: 0; }
+          .dd-menu-btn { display: flex; }
+          .dd-topbar { padding: 0 14px; }
+          .dd-topbar-date { display: none; }
+          .dd-topbar-username { display: none; }
+          .dd-content { padding: 14px 12px; }
+          .dd-stats { grid-template-columns: 1fr 1fr; }
+          .dd-section { padding: 16px 14px; }
+          .dd-page-head h2 { font-size: 17px; }
+          .dov-hero { padding: 18px; }
+          .dov-hero-left h1 { font-size: 17px; }
+          .dov-hero-avatar { width: 48px; height: 48px; font-size: 22px; }
+          .rev-summary-row { grid-template-columns: 1fr 1fr; }
+        }
       `}</style>
 
       <div className="dd-root">
@@ -1056,7 +1149,7 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
           <div className="dd-footer">
             <div className="dd-footer-user">
-              <div className="dd-avatar">👨‍⚕️</div>
+              <div className="dd-avatar">{doctorInitials}</div>
               <div className="dd-footer-meta">
                 <div className="dd-footer-name">
                   Dr. {user?.name || "Doctor"}
@@ -1073,21 +1166,24 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
         {/* Main area */}
         <div className="dd-main">
           <header className="dd-topbar">
-            <button
-              className="dd-menu-btn"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open menu"
-            >
-              ☰
-            </button>
-            <span className="dd-topbar-title">{pageTitles[activeTab]}</span>
+            <div className="dd-topbar-left">
+              <button
+                className="dd-menu-btn"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+              >
+                &#9776;
+              </button>
+              <span className="dd-topbar-title">{pageTitles[activeTab]}</span>
+            </div>
             <div className="dd-topbar-right">
+              <span className="dd-topbar-date">{todayLabel}</span>
               <button
                 className="dd-profile-btn"
                 onClick={() => setShowProfile(true)}
                 title="Edit profile"
               >
-                👨‍⚕️
+                {doctorInitials}
               </button>
               <span className="dd-topbar-username">
                 Dr. {user?.name || "Doctor"}
@@ -1395,6 +1491,17 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .dp-pg-btn:disabled { opacity:.5; cursor:default; }
                   .dp-pg-btn.active { border-color:#1a6fa0; background:#eff6ff; color:#1a6fa0; }
                   .dp-pg-btn:not(:disabled):hover { background:#eff6ff; border-color:#1a6fa0; }
+                  .dp-search-wrap { position:relative; flex:1; min-width:180px; max-width:320px; }
+                  .dp-search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:13px; color:#b0bec8; pointer-events:none; }
+                  .dp-search-input { width:100%; box-sizing:border-box; padding:8px 32px 8px 32px; border:1.5px solid #e4eaf0; border-radius:8px; font-size:13px; font-family:'DM Sans',sans-serif; background:#fff; color:#1a3a52; outline:none; transition:border-color 0.2s; }
+                  .dp-search-input:focus { border-color:#1a6fa0; }
+                  .dp-search-clear { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:#b0bec8; cursor:pointer; font-size:14px; line-height:1; padding:0; }
+                  .dp-search-clear:hover { color:#1a6fa0; }
+                  .dp-toolbar-clear { padding:7px 13px; border-radius:8px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#7a8fa6; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; transition:all .15s; font-family:'DM Sans',sans-serif; }
+                  .dp-toolbar-clear:hover { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+                  .dp-no-results { text-align:center; padding:32px 16px; }
+                  .dp-no-results-icon { font-size:36px; margin-bottom:10px; opacity:0.45; }
+                  .dp-no-results-text { font-size:13.5px; color:#7a8fa6; }
                   @media (max-width: 768px) {
                     .dp-grid { grid-template-columns: 1fr; }
                     .dp-card { padding:14px; }
@@ -1542,19 +1649,26 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
                       {/* Table */}
                       {(() => {
-                        // Filter non-favorited patients based on search
-                        const filteredPatients = patients
-                          .filter((p) => !favoritePatientIds.has(p.id))
-                          .filter(
-                            (p) =>
-                              p.name
-                                .toLowerCase()
-                                .includes(patientSearch.toLowerCase()) ||
-                              (p.email &&
-                                p.email
-                                  .toLowerCase()
-                                  .includes(patientSearch.toLowerCase())),
-                          );
+                        // Apply search + visit filter (includes all patients, favorites and non-favorites)
+                        const filteredPatients = patients.filter((p) => {
+                          const q = patientSearch.toLowerCase();
+                          const matchSearch =
+                            !q ||
+                            p.name.toLowerCase().includes(q) ||
+                            (p.email && p.email.toLowerCase().includes(q));
+                          const c = p.appointmentCount || 0;
+                          const matchVisit =
+                            patientVisitFilter === "all"
+                              ? true
+                              : patientVisitFilter === "new"
+                                ? c === 1
+                                : patientVisitFilter === "returning"
+                                  ? c >= 2 && c <= 5
+                                  : patientVisitFilter === "frequent"
+                                    ? c >= 6
+                                    : true;
+                          return matchSearch && matchVisit;
+                        });
 
                         const totalPages = Math.ceil(
                           filteredPatients.length / patientItemsPerPage,
@@ -1568,12 +1682,14 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
 
                         if (filteredPatients.length === 0) {
                           return (
-                            <div className="dp-empty">
-                              <div className="dp-empty-icon">👥</div>
-                              <p className="dp-empty-text">
-                                {patientSearch
-                                  ? "No patients found matching your search."
-                                  : "No non-favorited patients."}
+                            <div className="dp-no-results">
+                              <div className="dp-no-results-icon">
+                                &#128101;
+                              </div>
+                              <p className="dp-no-results-text">
+                                {patientSearch || patientVisitFilter !== "all"
+                                  ? "No patients match your search or filter."
+                                  : "No patients yet."}
                               </p>
                             </div>
                           );
@@ -2429,6 +2545,15 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   .da-send-btn { padding:8px 18px; border-radius:8px; border:none; background:#1a6fa0; color:#fff; font-size:13px; font-weight:700; cursor:pointer; }
                   .da-send-btn:disabled { opacity:.5; cursor:default; }
                   .da-empty { text-align:center; padding:40px; color:#7a8fa6; font-size:14px; }
+                  .da-search-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+                  .da-search-wrap { position:relative; flex:1; min-width:180px; max-width:340px; }
+                  .da-search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:13px; color:#b0bec8; pointer-events:none; }
+                  .da-search-input { width:100%; box-sizing:border-box; padding:8px 30px 8px 32px; border:1.5px solid #e4eaf0; border-radius:8px; font-size:13px; font-family:'DM Sans',sans-serif; background:#fff; color:#1a3a52; outline:none; transition:border-color 0.2s; }
+                  .da-search-input:focus { border-color:#1a6fa0; }
+                  .da-search-clear { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:#b0bec8; cursor:pointer; font-size:14px; line-height:1; padding:0; }
+                  .da-search-clear:hover { color:#1a6fa0; }
+                  .da-toolbar-clear { padding:7px 13px; border-radius:8px; border:1.5px solid #e4eaf0; background:#f8fafc; color:#7a8fa6; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; transition:all .15s; font-family:'DM Sans',sans-serif; }
+                  .da-toolbar-clear:hover { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
                   .da-section-label { font-size:11px; font-weight:700; color:#7a8fa6; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 12px; }
                   .da-records-btn { padding:6px 14px; border-radius:8px; border:1.5px solid #7c3aed; background:#fff; color:#7c3aed; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
                   .da-records-panel { border-top:1.5px solid #e4eaf0; background:#faf5ff; padding:16px 18px; }
@@ -2461,69 +2586,120 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                   </p>
                 </div>
 
-                {/* Filter tabs */}
+                {/* Filter + Search toolbar */}
                 <div className="da-toolbar">
                   {[
                     { key: "today", label: "Today" },
                     { key: "upcoming", label: "Upcoming" },
                     { key: "", label: "All" },
-                    { key: "ended", label: "⏹ Ended" },
+                    { key: "ended", label: "\u23F9 Ended" },
                   ].map(({ key, label }) => (
                     <button
                       key={key}
                       className={`da-fbtn${apptFilter === key ? " active" : ""}`}
-                      onClick={() => setApptFilter(key)}
+                      onClick={() => {
+                        setApptFilter(key);
+                        setApptSearch("");
+                        setApptTypeFilter("all");
+                      }}
                     >
                       {label}
                     </button>
                   ))}
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: "#7a8fa6",
-                      marginLeft: "auto",
-                    }}
-                  >
-                    {
-                      (apptFilter === "ended"
-                        ? appointments.filter((a) => endedSessions.has(a.id))
-                        : appointments
-                      ).length
-                    }{" "}
-                    appointment
-                    {(apptFilter === "ended"
-                      ? appointments.filter((a) => endedSessions.has(a.id))
-                      : appointments
-                    ).length !== 1
-                      ? "s"
-                      : ""}
-                  </span>
+                </div>
+                <div className="da-search-row">
+                  <div className="da-search-wrap">
+                    <span className="da-search-icon">&#128269;</span>
+                    <input
+                      className="da-search-input"
+                      type="text"
+                      placeholder="Search by patient name or reason\u2026"
+                      value={apptSearch}
+                      onChange={(e) => setApptSearch(e.target.value)}
+                    />
+                    {apptSearch && (
+                      <button
+                        className="da-search-clear"
+                        onClick={() => setApptSearch("")}
+                      >
+                        &#x2715;
+                      </button>
+                    )}
+                  </div>
+                  {["all", "telemedicine", "in_person"].map((t) => {
+                    const labels = {
+                      all: "All Types",
+                      telemedicine: "\uD83D\uDCF9 Telemedicine",
+                      in_person: "\uD83C\uDFE5 In-Person",
+                    };
+                    return (
+                      <button
+                        key={t}
+                        className={`da-fbtn${apptTypeFilter === t ? " active" : ""}`}
+                        onClick={() => setApptTypeFilter(t)}
+                      >
+                        {labels[t]}
+                      </button>
+                    );
+                  })}
+                  {(apptSearch || apptTypeFilter !== "all") && (
+                    <button
+                      className="da-toolbar-clear"
+                      onClick={() => {
+                        setApptSearch("");
+                        setApptTypeFilter("all");
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
 
-                {apptLoading ? (
-                  <div className="da-empty">Loading…</div>
-                ) : apptError ? (
-                  <div
-                    style={{
-                      padding: "12px 16px",
-                      background: "#fee2e2",
-                      color: "#991b1b",
-                      borderRadius: 8,
-                      marginBottom: 12,
-                    }}
-                  >
-                    {apptError}
-                  </div>
-                ) : (apptFilter === "ended"
-                    ? appointments.filter((a) => endedSessions.has(a.id))
-                    : appointments
-                  ).length === 0 ? (
-                  <div className="da-empty">No appointments found.</div>
-                ) : (
-                  (apptFilter === "ended"
-                    ? appointments.filter((a) => endedSessions.has(a.id))
-                    : appointments
-                  ).map((appt) => {
+                {(() => {
+                  const baseList =
+                    apptFilter === "ended"
+                      ? appointments.filter((a) => endedSessions.has(a.id))
+                      : appointments;
+                  const q = apptSearch.trim().toLowerCase();
+                  const filteredAppts = baseList.filter((a) => {
+                    const matchSearch =
+                      !q ||
+                      (a.patient_name &&
+                        a.patient_name.toLowerCase().includes(q)) ||
+                      (a.reason && a.reason.toLowerCase().includes(q));
+                    const matchType =
+                      apptTypeFilter === "all"
+                        ? true
+                        : apptTypeFilter === "telemedicine"
+                          ? !!a.is_telemedicine
+                          : !a.is_telemedicine;
+                    return matchSearch && matchType;
+                  });
+                  if (apptLoading)
+                    return <div className="da-empty">Loading…</div>;
+                  if (apptError)
+                    return (
+                      <div
+                        style={{
+                          padding: "12px 16px",
+                          background: "#fee2e2",
+                          color: "#991b1b",
+                          borderRadius: 8,
+                          marginBottom: 12,
+                        }}
+                      >
+                        {apptError}
+                      </div>
+                    );
+                  if (filteredAppts.length === 0)
+                    return (
+                      <div className="da-empty">
+                        {q || apptTypeFilter !== "all"
+                          ? "No appointments match your search or filter."
+                          : "No appointments found."}
+                      </div>
+                    );
+                  return filteredAppts.map((appt) => {
                     const initials = appt.patient_name
                       ? appt.patient_name
                           .split(" ")
@@ -2829,8 +3005,8 @@ const DoctorDashboard = ({ user: initialUser, onLogout }) => {
                         )}
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
               </>
             )}
 
