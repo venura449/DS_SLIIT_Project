@@ -6,12 +6,15 @@ console.log(logDirectory);
 const transport = pino.transport({
     target: 'pino-roll',
     options:{
-        file:path.join(logDirectory, 'audit'),
-        size: '0.5K',
+        file:path.join(logDirectory, 'audit.json'),
+        size: '10M',
         frequency: 'daily',
         mkdir:true,
-        extension:'.json',
-        dateFormat: 'yyyy-MM-dd'
+        extension:'json',
+        dateFormat: 'yyyy-MM-dd',
+        limit:{
+            count:10,
+        }
     },
 
 });
