@@ -37,7 +37,7 @@ OPTION 2: Run Services Locally (Development)
 
 1. Clone the repository:
    git clone https://github.com/venura449/DS_SLIIT_Project.git
-   cd DS_SLIIT_Projectn     
+   cd DS_SLIIT_Project     
 
 2. Install and start each backend service (repeat for each):
    cd services/<service-name>
