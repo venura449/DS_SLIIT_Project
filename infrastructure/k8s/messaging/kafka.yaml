@@ -14,6 +14,10 @@ spec:
       labels:
         app: kafka
     spec:
+      initContainers:
+        - name: wait-for-zookeeper
+          image: busybox:1.28
+          command: ['sh', '-c', "until nc -z zookeeper 2181; do echo waiting for zookeeper; sleep 2; done"]
       containers:
         - name: kafka
           image: confluentinc/cp-kafka:7.4.0
@@ -39,14 +43,11 @@ spec:
             - name: data
               mountPath: /var/lib/kafka/data
           readinessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - kafka-topics --bootstrap-server localhost:9092 --list
-            initialDelaySeconds: 30
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 45
             periodSeconds: 15
-            failureThreshold: 5
+            failureThreshold: 10
           livenessProbe:
             tcpSocket:
               port: 9092

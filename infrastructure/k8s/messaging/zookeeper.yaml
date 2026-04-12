@@ -32,9 +32,8 @@ spec:
             - name: log
               mountPath: /var/lib/zookeeper/log
           readinessProbe:
-            exec:
-              command:
-                ["/bin/sh", "-c", "echo ruok | nc localhost 2181 | grep imok"]
+            tcpSocket:
+              port: 2181
             initialDelaySeconds: 15
             periodSeconds: 10
           resources:

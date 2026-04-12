@@ -13,6 +13,10 @@ spec:
       labels:
         app: patient-service
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.28
+          command: ['sh', '-c', "until nc -z postgres-patient 5432; do echo waiting for postgres-patient; sleep 2; done"]
       containers:
         - name: patient-service
           image: healthcare/patient-service:latest

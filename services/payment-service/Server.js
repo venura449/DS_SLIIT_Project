@@ -5,7 +5,8 @@ const morgan = require('morgan');
 const client = require('prom-client');
 const promRegister = new client.Registry();
 client.collectDefaultMetrics({ register: promRegister });
-const { initializeProducer, disconnectProducer } = require('./config/kafka');
+// Kafka disabled - TODO: re-enable after Kafka deployment is fixed
+// const { initializeProducer, disconnectProducer } = require('./config/kafka');
 const { initializeDatabase } = require('./config/postgres');
 
 // Load environment variables
@@ -53,12 +54,23 @@ const server = app.listen(PORT, async () => {
     try {
         await initializeDatabase();
         console.log('Database initialized successfully');
-
-        await initializeProducer();
     } catch (error) {
-        console.error('Failed to start payment service:', error);
+        console.error('Failed to initialize database:', error);
         process.exit(1);
     }
+
+    // TODO: Re-enable Kafka after fixing Kafka deployment issues
+    // Initialize Kafka producer asynchronously (non-blocking)
+    // (async () => {
+    //     try {
+    //         await initializeProducer();
+    //         console.log('Kafka producer initialized successfully');
+    //     } catch (error) {
+    //         console.warn('WARNING: Kafka initialization failed - event publishing will be disabled:', error.message);
+    //         // Service continues to run without Kafka
+    //     }
+    // })();
+    console.log('Kafka producer initialization disabled (Kafka not yet available)');
 });
 
 // Graceful shutdown
@@ -66,7 +78,7 @@ process.on('SIGTERM', async () => {
     console.log('SIGTERM signal received: closing HTTP server');
     server.close(async () => {
         console.log('HTTP server closed');
-        await disconnectProducer();
+        // await disconnectProducer(); // Kafka disabled
         process.exit(0);
     });
 });

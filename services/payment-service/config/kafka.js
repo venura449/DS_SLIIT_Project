@@ -12,8 +12,8 @@ const initializeProducer = async () => {
         await producer.connect();
         console.log('Payment Service Kafka Producer connected');
     } catch (error) {
-        console.error('Failed to connect Kafka Producer:', error);
-        process.exit(1);
+        console.warn('WARNING: Failed to connect Kafka Producer - event publishing will be disabled:', error.message);
+        // Don't exit, allow service to continue without Kafka
     }
 };
 

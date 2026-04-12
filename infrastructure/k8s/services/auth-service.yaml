@@ -13,6 +13,10 @@ spec:
       labels:
         app: auth-service
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.28
+          command: ['sh', '-c', "until nc -z postgres-auth 5432; do echo waiting for postgres-auth; sleep 2; done"]
       containers:
         - name: auth-service
           # Replace with your container registry image, e.g. ghcr.io/your-org/healthcare-auth-service:latest
