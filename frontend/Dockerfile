@@ -9,13 +9,13 @@ ARG VITE_API_BASE_URL=http://gateway:3000/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
 # Copy package.json and package-lock.json (if exists)
-COPY package.json package-lock.json* ./
+COPY frontend/package.json frontend/package-lock.json* ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (including devDependencies needed for build)
+RUN npm ci --include=dev
 
-# Copy the entire project
-COPY . .
+# Copy the entire frontend project
+COPY frontend/ .
 
 # Build the Vite app with environment variable
 RUN npm run build
@@ -24,7 +24,7 @@ RUN npm run build
 FROM nginx:alpine
 
 # Copy nginx config (optional, uses default if not provided)
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html

@@ -2,11 +2,11 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY services/ai-symptom-service/package*.json ./
 
 RUN npm install
 
-COPY . .
+COPY services/ai-symptom-service/ .
 
 EXPOSE 3008
 

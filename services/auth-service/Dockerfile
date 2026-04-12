@@ -2,11 +2,11 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY services/auth-service/package*.json ./
 
 RUN npm install
 
-COPY . .
+COPY services/auth-service/ .
 
 EXPOSE 3001
 
