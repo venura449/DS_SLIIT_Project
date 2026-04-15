@@ -77,7 +77,6 @@ const initializeConsumer = async () => {
         console.log('✓ [Kafka] Consumer running, listening for events...');
     } catch (error) {
         console.error('❌ [Kafka] Failed to initialize Consumer:', error.message);
-        process.exit(1);
     }
 };
 

@@ -13,7 +13,6 @@ const initializeProducer = async () => {
         console.log('Auth Service Kafka Producer connected');
     } catch (error) {
         console.error('Failed to connect Kafka Producer:', error);
-        process.exit(1);
     }
 };
 

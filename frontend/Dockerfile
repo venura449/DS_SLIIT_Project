@@ -4,8 +4,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Accept build time arguments
-ARG VITE_API_BASE_URL=http://gateway:3000/api
+# Accept build time arguments - use relative path so Nginx can proxy
+ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
 # Copy package.json and package-lock.json (if exists)

@@ -6,7 +6,7 @@ services:
     build:
       context: ../frontend
       args:
-        VITE_API_BASE_URL: http://gateway:3000/api
+        VITE_API_BASE_URL: /api
     ports:
       - "80:80"
     depends_on:
@@ -352,7 +352,7 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://192.168.49.1:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
       - "9092:9092"
