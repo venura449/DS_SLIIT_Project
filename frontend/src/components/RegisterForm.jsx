@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { FaUserInjured, FaUserMd,FaEye, FaEyeSlash } from "react-icons/fa";
 import { registerUser } from "../utils/authService";
+
 const RegisterForm = ({ onRegister }) => {
   const [role, setRole] = useState("patient");
   const [firstName, setFirstName] = useState("");
@@ -17,8 +19,8 @@ const RegisterForm = ({ onRegister }) => {
     useState(false);
 
   const roles = [
-    { id: "patient", label: "Patient", icon: "🧑‍⚕️" },
-    { id: "doctor", label: "Doctor", icon: "👨‍⚕️" },
+    { id: "patient", label: "Patient", icon: <FaUserInjured /> },
+    { id: "doctor", label: "Doctor", icon: <FaUserMd /> },
   ];
 
   const validateForm = () => {
@@ -752,7 +754,7 @@ const RegisterForm = ({ onRegister }) => {
                     }
                     onClick={() => setShowPassword((v) => !v)}
                   >
-                    {showPassword ? "🙈" : "👁️"}
+                    {showPassword ? <FaEye /> : <FaEyeSlash />}
                   </button>
                 </div>
               </div>
@@ -781,7 +783,7 @@ const RegisterForm = ({ onRegister }) => {
                     }
                     onClick={() => setShowConfirmPassword((v) => !v)}
                   >
-                    {showConfirmPassword ? "🙈" : "👁️"}
+                    {showConfirmPassword ? <FaEye /> : <FaEyeSlash />}
                   </button>
                 </div>
               </div>
